@@ -31,6 +31,7 @@ export default function InspectOverlay({
   return (
     <div
       onClick={onClose}
+      data-testid="inspect"
       className="absolute inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
       style={{
         background: "rgba(6,5,4,0.82)",
