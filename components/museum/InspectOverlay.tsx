@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Painting } from "@/db/schema";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized } from "@/lib/i18n";
+import FullscreenViewer from "@/components/museum/FullscreenViewer";
 
 export default function InspectOverlay({
   painting,
@@ -15,6 +16,7 @@ export default function InspectOverlay({
   onClose: () => void;
 }) {
   const [shown, setShown] = useState(false);
+  const [fs, setFs] = useState(false);
   const t = useT();
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function InspectOverlay({
             "transform 0.55s cubic-bezier(0.16,1,0.3,1), opacity 0.4s ease",
         }}
       >
-        <div className="flex min-h-[38vh] flex-1 items-center justify-center bg-black p-4 md:p-8">
+        <div className="relative flex min-h-[38vh] flex-1 items-center justify-center bg-black p-4 md:p-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={painting.imageUrl}
@@ -68,6 +70,12 @@ export default function InspectOverlay({
             className="max-h-[82vh] max-w-full object-contain"
             style={{ boxShadow: `0 0 0 1px ${accent}55, 0 30px 80px -20px #000` }}
           />
+          <button
+            onClick={() => setFs(true)}
+            className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-[11px] text-ink backdrop-blur transition-colors hover:bg-black/70"
+          >
+            ⤢ {t("fullscreen")}
+          </button>
         </div>
 
         <div className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-7 md:w-[360px]">
@@ -135,6 +143,10 @@ export default function InspectOverlay({
           ×
         </button>
       </div>
+
+      {fs && (
+        <FullscreenViewer painting={painting} onClose={() => setFs(false)} />
+      )}
     </div>
   );
 }

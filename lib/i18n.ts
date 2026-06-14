@@ -32,6 +32,8 @@ const en: Dict = {
   keyDates: "Key dates",
   born: "Born",
   died: "Died",
+  fullscreen: "Full screen",
+  maxDefinition: "Max definition",
 };
 
 const fr: Dict = {
@@ -57,6 +59,8 @@ const fr: Dict = {
   keyDates: "Repères",
   born: "Naissance",
   died: "Décès",
+  fullscreen: "Plein écran",
+  maxDefinition: "Définition max",
 };
 
 const ja: Dict = {
@@ -82,6 +86,8 @@ const ja: Dict = {
   keyDates: "略年譜",
   born: "生誕",
   died: "死去",
+  fullscreen: "全画面",
+  maxDefinition: "最高精細",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

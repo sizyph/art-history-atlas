@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Galaxy, Layout, StarArtist } from "@/lib/timeline";
 import ArtistCard from "@/components/ArtistCard";
 import ConstellationFilter from "@/components/ConstellationFilter";
@@ -254,6 +254,16 @@ function Starfield({ view, flying }: { view: View; flying: boolean }) {
   );
 }
 
+function starPortrait(url: string | null): string | null {
+  if (!url) return null;
+  if (url.includes("Special:FilePath")) {
+    return /width=\d+/.test(url)
+      ? url.replace(/width=\d+/, "width=96")
+      : `${url}${url.includes("?") ? "&" : "?"}width=96`;
+  }
+  return url;
+}
+
 export default function Constellation({ layout }: { layout: Layout }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -267,6 +277,38 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const [highlight, setHighlight] = useState<string[] | null>(null);
   const { locale } = useLocale();
   const t = useT();
+
+  const bounds = useMemo(() => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const g of layout.galaxies) {
+      minX = Math.min(minX, g.x);
+      minY = Math.min(minY, g.y);
+      maxX = Math.max(maxX, g.x);
+      maxY = Math.max(maxY, g.y);
+    }
+    return { minX, minY, maxX, maxY };
+  }, [layout]);
+
+  // Keep the galaxy field from being pushed entirely off-screen — at least a
+  // sliver of the timeline always stays visible.
+  const clampView = (v: View): View => {
+    const vw = window.innerWidth || 1280;
+    const vh = window.innerHeight || 720;
+    const m = 130;
+    const clamp1 = (val: number, bMin: number, bMax: number, vp: number) => {
+      const lo = m - bMax * v.scale;
+      const hi = vp - m - bMin * v.scale;
+      return lo <= hi ? Math.min(Math.max(val, lo), hi) : (lo + hi) / 2;
+    };
+    return {
+      scale: v.scale,
+      x: clamp1(v.x, bounds.minX, bounds.maxX, vw),
+      y: clamp1(v.y, bounds.minY, bounds.maxY, vh),
+    };
+  };
 
   const computeFit = (): View | null => {
     if (typeof window === "undefined") return null;
@@ -331,7 +373,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
         const ns = Math.min(Math.max(v.scale * Math.exp(-e.deltaY * 0.0016), 0.14), 4);
         const wx = (cx - v.x) / v.scale;
         const wy = (cy - v.y) / v.scale;
-        return { scale: ns, x: cx - wx * ns, y: cy - wy * ns };
+        return clampView({ scale: ns, x: cx - wx * ns, y: cy - wy * ns });
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -341,7 +383,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const flyTo = (v: View) => {
     interacted.current = true;
     setFlying(true);
-    setView(v);
+    setView(clampView(v));
     window.clearTimeout(flyTimer.current);
     flyTimer.current = window.setTimeout(() => setFlying(false), 1150);
   };
@@ -427,7 +469,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
     const dy = e.clientY - drag.current.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) didDrag.current = true;
     drag.current = { x: e.clientX, y: e.clientY };
-    setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+    setView((v) => clampView({ ...v, x: v.x + dx, y: v.y + dy }));
   };
   const onPointerUp = () => {
     drag.current = null;
@@ -603,16 +645,45 @@ export default function Constellation({ layout }: { layout: Layout }) {
                     transform: `translate(-50%, -50%) scale(${inv})`,
                   }}
                 >
-                  <span
-                    style={{
-                      display: "block",
-                      width: 9,
-                      height: 9,
-                      borderRadius: "50%",
-                      background: "#efe9dd",
-                      boxShadow: `0 0 10px 2px ${g.color}`,
-                    }}
-                  />
+                  {a.portraitUrl ? (
+                    <span
+                      style={{
+                        display: "block",
+                        width: 17,
+                        height: 17,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: `1.5px solid ${g.color}`,
+                        boxSizing: "border-box",
+                        boxShadow: `0 0 9px 1px ${g.color}`,
+                        background: "#221d16",
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={starPortrait(a.portraitUrl) ?? a.portraitUrl}
+                        alt=""
+                        loading="lazy"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        display: "block",
+                        width: 9,
+                        height: 9,
+                        borderRadius: "50%",
+                        background: "#efe9dd",
+                        boxShadow: `0 0 10px 2px ${g.color}`,
+                      }}
+                    />
+                  )}
                 </button>
                 <div
                   className="pointer-events-none absolute"
