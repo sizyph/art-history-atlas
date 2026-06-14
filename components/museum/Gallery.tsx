@@ -42,14 +42,34 @@ type Hang = {
   rotation: [number, number, number];
 };
 
-function useHangs(paintings: Painting[]): { hangs: Hang[]; depth: number } {
+function useHangs(paintings: Painting[]): {
+  hangs: Hang[];
+  depth: number;
+  descZ: number;
+} {
   return useMemo(() => {
+    const DESC = 3.6; // left-wall length reserved for the description, at the entrance
     const perSide = Math.ceil(paintings.length / 2);
-    const depth = Math.max(perSide * SPACING + 3, 14);
+    const depth = Math.max(perSide * SPACING + DESC + 3, 16);
+    const front = depth / 2;
+    const descZ = front - DESC / 2 - 0.7; // description centred near the entrance (left wall)
     const left = paintings.slice(0, perSide);
     const right = paintings.slice(perSide);
-    const lz = zPositions(left.length);
+
+    // right wall: centred along the full wall
     const rz = zPositions(right.length);
+    // left wall: paintings begin behind the description and run to the back
+    const leftTop = descZ - DESC / 2 - 1.0;
+    const leftBottom = -front + 2;
+    const lz =
+      left.length <= 1
+        ? [(leftTop + leftBottom) / 2]
+        : Array.from(
+            { length: left.length },
+            (_, i) =>
+              leftTop - (i * (leftTop - leftBottom)) / (left.length - 1),
+          );
+
     const hangs: Hang[] = [];
     left.forEach((p, i) =>
       hangs.push({
@@ -65,7 +85,7 @@ function useHangs(paintings: Painting[]): { hangs: Hang[]; depth: number } {
         rotation: [0, -Math.PI / 2, 0],
       }),
     );
-    return { hangs, depth };
+    return { hangs, depth, descZ };
   }, [paintings]);
 }
 
@@ -362,28 +382,38 @@ function IntroCamera({
   onTurning: () => void;
   onDone: () => void;
 }) {
-  const { camera, gl } = useThree();
+  const { camera } = useThree();
   const start = useRef<number | null>(null);
   const turned = useRef(false);
   const done = useRef(false);
+  const lit = useRef(0.32);
+
+  const setLights = (state: { scene: THREE.Scene }, factor: number) => {
+    state.scene.traverse((o) => {
+      const L = o as unknown as THREE.Light & { isLight?: boolean };
+      if (L.isLight) {
+        if (L.userData.base === undefined) L.userData.base = L.intensity;
+        L.intensity = (L.userData.base as number) * factor;
+      }
+    });
+  };
 
   useFrame((state) => {
     if (!active || done.current) return;
     if (start.current === null) {
       start.current = state.clock.elapsedTime;
-      gl.toneMappingExposure = 0.4; // open dim
-      camera.rotation.y = 0.08;
+      camera.rotation.y = 0.06;
     }
     const e = state.clock.elapsedTime - start.current;
 
     let targetYaw: number;
-    let targetExp: number;
+    let targetLit: number;
     if (e < INTRO_READ) {
-      targetYaw = 0.5; // turned left toward the placard
-      targetExp = 0.42;
+      targetYaw = 1.2; // turned left to face the description wall
+      targetLit = 0.32; // gallery dim while you read it
     } else {
       targetYaw = 0; // face down the gallery
-      targetExp = 1.12;
+      targetLit = 1; // lights come up
       if (!turned.current) {
         turned.current = true;
         onTurning();
@@ -391,13 +421,13 @@ function IntroCamera({
     }
 
     camera.rotation.y += (targetYaw - camera.rotation.y) * 0.07;
-    gl.toneMappingExposure +=
-      (targetExp - gl.toneMappingExposure) * 0.05;
+    lit.current += (targetLit - lit.current) * 0.05;
+    setLights(state, lit.current);
 
     if (e > INTRO_READ + INTRO_TURN) {
       done.current = true;
       camera.rotation.y = 0;
-      gl.toneMappingExposure = 1.12;
+      setLights(state, 1);
       onDone();
     }
   });
@@ -434,131 +464,207 @@ class TexBoundary extends Component<
   }
 }
 
-function WallPlacard({
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+): string[] {
+  const parts = text.split(/(\s+)/);
+  const lines: string[] = [];
+  let line = "";
+  for (const part of parts) {
+    const test = line + part;
+    if (ctx.measureText(test).width > maxW && line.trim()) {
+      lines.push(line.trimEnd());
+      line = part.replace(/^\s+/, "");
+    } else {
+      line = test;
+    }
+    // break runs with no spaces (e.g. CJK) by character
+    while (ctx.measureText(line).width > maxW && line.length > 1) {
+      let bp = line.length;
+      while (bp > 1 && ctx.measureText(line.slice(0, bp)).width > maxW) bp--;
+      lines.push(line.slice(0, bp));
+      line = line.slice(bp);
+    }
+  }
+  if (line.trim()) lines.push(line.trimEnd());
+  return lines;
+}
+
+function makeDescriptionTexture(d: {
+  name: string;
+  dates: string | null;
+  sub: string;
+  bio: string | null;
+  keyHeader: string;
+  keyDates: { year: number; label: string }[];
+  accent: string;
+}): THREE.CanvasTexture {
+  const W = 840;
+  const H = 1180;
+  const PAD = 64;
+  const maxW = W - PAD * 2;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext("2d")!;
+
+  ctx.fillStyle = "#19140d";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = d.accent;
+  ctx.fillRect(0, 0, W, 9);
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(9, 9, W - 18, H - 18);
+
+  let y = 134;
+  ctx.fillStyle = "#efe7d7";
+  ctx.font = '600 64px "Cormorant Garamond", Georgia, serif';
+  for (const ln of wrapText(ctx, d.name, maxW)) {
+    ctx.fillText(ln, PAD, y);
+    y += 70;
+  }
+  y += 6;
+
+  if (d.dates) {
+    ctx.fillStyle = d.accent;
+    ctx.font = '34px "Cormorant Garamond", Georgia, serif';
+    ctx.fillText(d.dates, PAD, y);
+    y += 46;
+  }
+  if (d.sub) {
+    ctx.fillStyle = "#a99f8d";
+    ctx.font = '20px "Inter", system-ui, sans-serif';
+    ctx.letterSpacing = "3px";
+    ctx.fillText(d.sub.toUpperCase(), PAD, y);
+    ctx.letterSpacing = "0px";
+    y += 38;
+  }
+
+  y += 16;
+  ctx.strokeStyle = d.accent;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(PAD, y);
+  ctx.lineTo(PAD + 230, y);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  y += 44;
+
+  if (d.bio) {
+    ctx.fillStyle = "#c4baa6";
+    ctx.font = '27px "Inter", system-ui, sans-serif';
+    for (const ln of wrapText(ctx, d.bio, maxW).slice(0, 11)) {
+      ctx.fillText(ln, PAD, y);
+      y += 39;
+    }
+  }
+
+  y += 36;
+  ctx.fillStyle = d.accent;
+  ctx.font = '22px "Inter", system-ui, sans-serif';
+  ctx.letterSpacing = "3px";
+  ctx.fillText(d.keyHeader.toUpperCase(), PAD, y);
+  ctx.letterSpacing = "0px";
+  y += 20;
+  for (const kd of d.keyDates) {
+    y += 47;
+    if (y > H - 46) break;
+    ctx.fillStyle = d.accent;
+    ctx.beginPath();
+    ctx.arc(PAD + 6, y - 9, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#9a8f7b";
+    ctx.font = '600 25px "Cormorant Garamond", Georgia, serif';
+    ctx.fillText(String(kd.year), PAD + 30, y);
+    ctx.fillStyle = "#d8cfbd";
+    ctx.font = '25px "Inter", system-ui, sans-serif';
+    let label = kd.label;
+    while (ctx.measureText(label).width > maxW - 130 && label.length > 4) {
+      label = label.slice(0, -2);
+    }
+    if (label !== kd.label) label = `${label.trimEnd()}…`;
+    ctx.fillText(label, PAD + 130, y);
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// The artist description, painted full-height on the left wall at the entrance.
+function DescriptionWall({
   artist,
   period,
   keyDates,
   accent,
-  phase,
+  z,
 }: {
   artist: Artist;
   period: Period | null;
   keyDates: { year: number; label: string }[];
   accent: string;
-  phase: number;
+  z: number;
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const name =
-    localized(locale, artist.i18n, "name", artist.name) ?? artist.name;
-  const dates =
-    artist.birthYear != null || artist.deathYear != null
-      ? `${artist.birthYear ?? "?"} – ${artist.deathYear ?? "?"}`
-      : null;
-  const sub = [
-    localized(locale, artist.i18n, "nationality", artist.nationality),
-    period ? periodName(locale, period.name) : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const bio = localized(locale, artist.i18n, "bio", artist.bio);
+  const [tex, setTex] = useState<THREE.CanvasTexture | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    const name =
+      localized(locale, artist.i18n, "name", artist.name) ?? artist.name;
+    const dates =
+      artist.birthYear != null || artist.deathYear != null
+        ? `${artist.birthYear ?? "?"} – ${artist.deathYear ?? "?"}`
+        : null;
+    const sub = [
+      localized(locale, artist.i18n, "nationality", artist.nationality),
+      period ? periodName(locale, period.name) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const bio = localized(locale, artist.i18n, "bio", artist.bio);
+    const build = () => {
+      if (cancelled) return;
+      setTex((old) => {
+        old?.dispose();
+        return makeDescriptionTexture({
+          name,
+          dates,
+          sub,
+          bio,
+          keyHeader: t("keyDates"),
+          keyDates,
+          accent,
+        });
+      });
+    };
+    build();
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(build);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, artist, period, keyDates, accent]);
+
+  if (!tex) return null;
+  const PH = WALL_HEIGHT - 0.5;
+  const PW = PH * (840 / 1180);
   return (
-    <div
-      className="pointer-events-none absolute inset-y-0 left-0 z-30 flex items-center"
-      style={{
-        opacity: phase === 0 ? 1 : 0,
-        transform: phase === 0 ? "translateX(0)" : "translateX(-48px)",
-        transition:
-          "opacity 0.7s ease, transform 1.25s cubic-bezier(0.4,0,0.2,1)",
-      }}
+    <mesh
+      position={[-ROOM_WIDTH / 2 + 0.06, WALL_HEIGHT / 2, z]}
+      rotation={[0, Math.PI / 2, 0]}
     >
-      <div
-        className="m-6 w-[360px] overflow-hidden rounded-xl border border-line p-6"
-        style={{
-          background: "rgba(20,16,11,0.93)",
-          backdropFilter: "blur(2px)",
-          WebkitBackdropFilter: "blur(2px)",
-          boxShadow: `0 30px 80px -20px rgba(0,0,0,0.85), 0 0 0 1px ${accent}22`,
-        }}
-      >
-        <div
-          className="-mx-6 -mt-6 mb-5"
-          style={{
-            height: 3,
-            background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
-          }}
-        />
-        <div className="flex gap-4">
-          {artist.portraitUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={artist.portraitUrl}
-              alt=""
-              className="h-[112px] w-[86px] rounded object-cover"
-              style={{ border: "1px solid #38322A" }}
-            />
-          )}
-          <div className="min-w-0">
-            <h2 className="font-display text-2xl leading-tight text-ink">
-              {name}
-            </h2>
-            {dates && (
-              <div
-                className="mt-1 font-display text-sm"
-                style={{ color: accent }}
-              >
-                {dates}
-              </div>
-            )}
-            {sub && (
-              <div className="mt-1.5 text-[10px] uppercase tracking-[0.16em] text-ink-soft">
-                {sub}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {bio && (
-          <p
-            className="mt-4 text-[12.5px] leading-relaxed text-ink-soft"
-            style={{
-              display: "-webkit-box",
-              WebkitLineClamp: 5,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {bio}
-          </p>
-        )}
-
-        {keyDates.length > 0 && (
-          <div className="mt-5">
-            <div
-              className="mb-2.5 text-[10px] uppercase tracking-[0.2em]"
-              style={{ color: accent }}
-            >
-              {t("keyDates")}
-            </div>
-            <ul className="space-y-2 border-l border-line pl-4">
-              {keyDates.map((d, i) => (
-                <li key={i} className="relative flex gap-3 text-[12.5px]">
-                  <span
-                    className="absolute -left-[18px] top-1.5 h-1.5 w-1.5 rounded-full"
-                    style={{ background: accent }}
-                  />
-                  <span className="w-9 shrink-0 font-display tabular-nums text-ink-faint">
-                    {d.year}
-                  </span>
-                  <span className="text-ink-soft">{d.label}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </div>
+      <planeGeometry args={[PW, PH]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
+    </mesh>
   );
 }
 
@@ -573,7 +679,7 @@ export default function Gallery({
   paintings: Painting[];
   intro?: boolean;
 }) {
-  const { hangs, depth } = useHangs(paintings);
+  const { hangs, depth, descZ } = useHangs(paintings);
   const accent = period?.color ?? "#c9a24b";
   const t = useT();
   const { locale } = useLocale();
@@ -652,6 +758,13 @@ export default function Gallery({
           },
         )}
         <Room depth={depth} />
+        <DescriptionWall
+          artist={artist}
+          period={period}
+          keyDates={keyDates}
+          accent={accent}
+          z={descZ}
+        />
         {hangs.map((hang) => (
           <TexBoundary
             key={hang.p.id}
@@ -687,29 +800,6 @@ export default function Gallery({
       {/* fade in from black */}
       <FadeIn />
 
-      {/* intro: the gallery sits dim + blurred behind a left-wall placard,
-          then clears as the camera turns to face the room */}
-      {phase < 2 && (
-        <div
-          className="pointer-events-none absolute inset-0 z-20"
-          style={{
-            backdropFilter: phase === 0 ? "blur(7px)" : "blur(0px)",
-            WebkitBackdropFilter: phase === 0 ? "blur(7px)" : "blur(0px)",
-            background: phase === 0 ? "rgba(10,8,6,0.4)" : "rgba(10,8,6,0)",
-            transition:
-              "backdrop-filter 1.3s ease, -webkit-backdrop-filter 1.3s ease, background 1.3s ease",
-          }}
-        />
-      )}
-      {phase < 2 && (
-        <WallPlacard
-          artist={artist}
-          period={period}
-          keyDates={keyDates}
-          accent={accent}
-          phase={phase}
-        />
-      )}
 
       {/* top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-6">

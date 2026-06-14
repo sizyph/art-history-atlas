@@ -82,7 +82,11 @@ export default function ConstellationFilter({
   }, [open, resultKey]);
 
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-5 z-30 -translate-x-1/2">
+    <div
+      className="pointer-events-auto absolute left-1/2 top-5 z-30 -translate-x-1/2"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-5 py-2.5 text-[11px] uppercase tracking-[0.22em] text-ink backdrop-blur transition-colors hover:bg-black/60"

@@ -135,31 +135,56 @@ async function main() {
   // ── Painting titles ───────────────────────────────────────────────────
   const ps = await db.select().from(paintings);
   const withQid = ps.filter((p) => p.wikidataQid);
-  const titleMap: Record<string, Record<string, string | undefined>> = {};
+  const meta: Record<
+    string,
+    { fr?: string; ja?: string; frT?: string; jaT?: string }
+  > = {};
   const pq = [...new Set(withQid.map((p) => p.wikidataQid!))];
-  for (let i = 0; i < pq.length; i += 50) {
-    const ents = await wbGetEntities(pq.slice(i, i + 50), "labels");
+  for (let i = 0; i < pq.length; i += 40) {
+    const ents = await wbGetEntities(
+      pq.slice(i, i + 40),
+      "labels|sitelinks",
+      "&sitefilter=frwiki|jawiki",
+    );
     for (const q of Object.keys(ents)) {
-      titleMap[q] = {
+      meta[q] = {
         fr: ents[q].labels?.fr?.value,
         ja: ents[q].labels?.ja?.value,
+        frT: ents[q].sitelinks?.frwiki?.title,
+        jaT: ents[q].sitelinks?.jawiki?.title,
       };
     }
   }
 
   let pDone = 0;
+  let pStories = 0;
   for (const p of withQid) {
-    const tl = titleMap[p.wikidataQid!];
-    if (!tl || (!tl.fr && !tl.ja)) continue;
+    const m = meta[p.wikidataQid!];
+    if (!m) continue;
     const i18n: Record<string, any> = {};
-    for (const lang of LANGS) if (tl[lang]) i18n[lang] = { title: tl[lang] };
+    for (const lang of LANGS) {
+      const entry: Record<string, string> = {};
+      const title = lang === "fr" ? m.fr : m.ja;
+      if (title) entry.title = title;
+      const wikiTitle = lang === "fr" ? m.frT : m.jaT;
+      if (wikiTitle) {
+        const story = await summaryExtract(lang, wikiTitle);
+        if (story) {
+          entry.story = story;
+          pStories++;
+        }
+      }
+      if (Object.keys(entry).length) i18n[lang] = entry;
+    }
     if (!Object.keys(i18n).length) continue;
     await db.update(paintings).set({ i18n }).where(eq(paintings.id, p.id));
     pDone++;
+    if (pDone % 60 === 0) console.log(`  …paintings ${pDone}`);
+    await sleep(50);
   }
 
   console.log(
-    `\n— Done — artists: ${aDone}/${arts.length} · painting titles: ${pDone}/${ps.length}`,
+    `\n— Done — artists: ${aDone}/${arts.length} · paintings: ${pDone} (${pStories} fr/ja stories) /${ps.length}`,
   );
   process.exit(0);
 }

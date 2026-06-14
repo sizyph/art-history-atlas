@@ -8,18 +8,31 @@ import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized, periodName } from "@/lib/i18n";
 
+type View = { x: number; y: number; scale: number };
+
 type Star = {
   x: number;
   y: number;
   r: number;
   baseA: number;
   color: string;
+  color2: string;
+  flick: number;
   ph: number;
   sp: number;
   tw: number;
 };
 
-function Starfield() {
+type Meteor = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  len: number;
+};
+
+function Starfield({ view, flying }: { view: View; flying: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cvs = ref.current;
@@ -30,10 +43,20 @@ function Starfield() {
     let w = 0;
     let h = 0;
     let stars: Star[] = [];
+    const meteors: Meteor[] = [];
+    let nextMeteor = 3;
     let raf = 0;
     let last = 0;
     // warm white, blue-white, amber, warm — realistic star colours
     const COLORS = ["236,230,218", "208,219,240", "247,226,201", "255,243,228"];
+    const FLICK = ["120,170,255", "255,150,120", "170,255,205"]; // shimmer hues
+    const lerpColor = (c1: string, c2: string, m: number) => {
+      const a = c1.split(",");
+      const b = c2.split(",");
+      return `${Math.round(+a[0] + (+b[0] - +a[0]) * m)},${Math.round(
+        +a[1] + (+b[1] - +a[1]) * m,
+      )},${Math.round(+a[2] + (+b[2] - +a[2]) * m)}`;
+    };
 
     const build = () => {
       const parent = cvs.parentElement;
@@ -53,26 +76,30 @@ function Starfield() {
         return s / 233280;
       };
       stars = [];
-      for (let i = 0; i < 820; i++) {
+      for (let i = 0; i < 1060; i++) {
         const x = rnd() * w;
         const y = rnd() * h;
         const bright = rnd();
         const r = bright > 0.9 ? rnd() * 1.6 + 1.0 : rnd() * 1.05 + 0.35;
         const baseA = bright > 0.9 ? rnd() * 0.35 + 0.55 : rnd() * 0.42 + 0.24;
         const dawnFade = 1 - 0.32 * (x / w); // stars wash out toward the dawn (right)
+        const color = COLORS[Math.floor(rnd() * COLORS.length)];
+        const flickering = rnd() < 0.16; // ~1 in 6 stars shimmers colour
         stars.push({
           x,
           y,
           r,
           baseA: baseA * dawnFade,
-          color: COLORS[Math.floor(rnd() * COLORS.length)],
+          color,
+          color2: flickering ? FLICK[Math.floor(rnd() * FLICK.length)] : color,
+          flick: flickering ? rnd() * 0.5 + 0.4 : 0,
           ph: rnd() * Math.PI * 2,
           sp: rnd() * 0.9 + 0.25,
           tw: bright > 0.55 ? 1 : 0.35,
         });
       }
       // a faint Milky Way band, bottom-left → upper-right
-      for (let i = 0; i < 210; i++) {
+      for (let i = 0; i < 260; i++) {
         const t = rnd();
         const bx = t * w;
         const by = h * 0.82 - t * h * 0.6 + (rnd() - 0.5) * h * 0.16;
@@ -83,6 +110,8 @@ function Starfield() {
           r: rnd() * 0.85 + 0.3,
           baseA: (rnd() * 0.3 + 0.16) * dawnFade,
           color: "236,231,223",
+          color2: "236,231,223",
+          flick: 0,
           ph: rnd() * Math.PI * 2,
           sp: rnd() * 0.8 + 0.25,
           tw: 0.5,
@@ -117,6 +146,7 @@ function Starfield() {
 
     const frame = (t: number) => {
       raf = requestAnimationFrame(frame);
+      const dt = Math.min((t - last) / 1000, 0.05);
       if (t - last < 33) return; // ~30fps is plenty for a calm twinkle
       last = t;
       if (!w || !h) return;
@@ -127,15 +157,61 @@ function Starfield() {
         const tw = 1 + st.tw * 0.32 * Math.sin(time * st.sp + st.ph);
         const a = Math.max(0, Math.min(1, st.baseA * tw));
         if (a <= 0.01) continue;
+        const col =
+          st.flick > 0
+            ? lerpColor(
+                st.color,
+                st.color2,
+                (Math.sin(time * st.sp * 1.3 + st.ph) * 0.5 + 0.5) * st.flick,
+              )
+            : st.color;
         ctx.beginPath();
         ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${st.color},${a})`;
+        ctx.fillStyle = `rgba(${col},${a})`;
         ctx.fill();
         if (st.r > 1.0) {
           ctx.beginPath();
           ctx.arc(st.x, st.y, st.r * 2.8, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${st.color},${a * 0.1})`;
+          ctx.fillStyle = `rgba(${col},${a * 0.1})`;
           ctx.fill();
+        }
+      }
+
+      // an occasional shooting star
+      nextMeteor -= dt;
+      if (nextMeteor <= 0 && meteors.length < 2) {
+        nextMeteor = 6 + Math.random() * 9;
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const speed = 8 + Math.random() * 6;
+        meteors.push({
+          x: w * (0.15 + Math.random() * 0.7),
+          y: -20 - Math.random() * h * 0.1,
+          vx: dir * speed * 0.5,
+          vy: speed,
+          life: 0,
+          len: 70 + Math.random() * 70,
+        });
+      }
+      for (let i = meteors.length - 1; i >= 0; i--) {
+        const m = meteors[i];
+        m.x += m.vx;
+        m.y += m.vy;
+        m.life += 1;
+        const fade = Math.max(0, 1 - m.life / 70);
+        const inv = 1 / Math.hypot(m.vx, m.vy);
+        const tx = m.x - m.vx * inv * m.len;
+        const ty = m.y - m.vy * inv * m.len;
+        const grad = ctx.createLinearGradient(m.x, m.y, tx, ty);
+        grad.addColorStop(0, `rgba(255,248,236,${0.85 * fade})`);
+        grad.addColorStop(1, "rgba(255,248,236,0)");
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        if (m.y > h + 50 || m.x < -80 || m.x > w + 80 || m.life > 90) {
+          meteors.splice(i, 1);
         }
       }
     };
@@ -151,12 +227,32 @@ function Starfield() {
     };
   }, []);
 
+  // Parallax: drift + zoom the whole sky a touch with the constellation view,
+  // clamped so the up-scaled canvas never reveals an edge.
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1440;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 900;
+  const zoom = 1.3 + Math.max(0, view.scale - 0.25) * 0.1;
+  const maxX = ((zoom - 1) / 2) * vw * 0.9;
+  const maxY = ((zoom - 1) / 2) * vh * 0.9;
+  const px = Math.max(-maxX, Math.min(maxX, view.x * 0.025));
+  const py = Math.max(-maxY, Math.min(maxY, view.y * 0.025));
+
   return (
-    <canvas ref={ref} className="pointer-events-none absolute inset-0" aria-hidden />
+    <canvas
+      ref={ref}
+      className="pointer-events-none absolute inset-0"
+      aria-hidden
+      style={{
+        transform: `translate(${px}px, ${py}px) scale(${zoom})`,
+        transformOrigin: "center",
+        transition: flying
+          ? "transform 1.15s cubic-bezier(0.22,1,0.36,1)"
+          : "none",
+        willChange: "transform",
+      }}
+    />
   );
 }
-
-type View = { x: number; y: number; scale: number };
 
 export default function Constellation({ layout }: { layout: Layout }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -299,7 +395,12 @@ export default function Constellation({ layout }: { layout: Layout }) {
 
   const pickArtist = (g: Galaxy, a: StarArtist) => {
     setHighlight([g.slug]);
-    flyToPeriod(g);
+    // Center the constellation on the artist's star, so stepping back from the
+    // card reveals their surroundings.
+    const vw = window.innerWidth || 1280;
+    const vh = window.innerHeight || 720;
+    const s = 1.55;
+    flyTo({ scale: s, x: vw / 2 - a.x * s, y: vh / 2 - a.y * s });
     window.setTimeout(() => setSelected(a), 650);
   };
 
@@ -348,7 +449,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
       }}
       className="relative h-screen w-screen cursor-grab touch-none select-none overflow-hidden bg-bg active:cursor-grabbing"
     >
-      <Starfield />
+      <Starfield view={view} flying={flying} />
 
       <div
         className="absolute left-0 top-0"
