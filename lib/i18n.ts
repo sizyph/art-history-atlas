@@ -35,6 +35,7 @@ const en: Dict = {
   born: "Born",
   died: "Died",
   fullscreen: "Full screen",
+  exitFullscreen: "Exit full screen",
   maxDefinition: "Max definition",
 };
 
@@ -64,6 +65,7 @@ const fr: Dict = {
   born: "Naissance",
   died: "Décès",
   fullscreen: "Plein écran",
+  exitFullscreen: "Quitter le plein écran",
   maxDefinition: "Définition max",
 };
 
@@ -93,6 +95,7 @@ const ja: Dict = {
   born: "生誕",
   died: "死去",
   fullscreen: "全画面",
+  exitFullscreen: "全画面を終了",
   maxDefinition: "最高精細",
 };
 
