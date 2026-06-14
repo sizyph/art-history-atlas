@@ -1,6 +1,7 @@
 import { asc, count, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { artists, paintings, periods } from "@/db/schema";
+import { artists, influences, paintings, periods } from "@/db/schema";
 import type { LayoutInput } from "@/lib/timeline";
 
 /** Periods + artists (with painting counts) for the constellation. */
@@ -27,7 +28,18 @@ export async function getConstellationData(): Promise<LayoutInput> {
     .groupBy(artists.id)
     .orderBy(asc(artists.orderIndex));
 
-  return { periods: ps, artists: as };
+  const infl = alias(artists, "infl");
+  const links = await db
+    .select({
+      aSlug: artists.slug,
+      bSlug: infl.slug,
+      note: influences.note,
+    })
+    .from(influences)
+    .innerJoin(artists, eq(influences.artistId, artists.id))
+    .innerJoin(infl, eq(influences.influencerId, infl.id));
+
+  return { periods: ps, artists: as, influences: links };
 }
 
 /** One artist with their period and ordered paintings (for the museum). */

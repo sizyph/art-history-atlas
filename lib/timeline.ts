@@ -33,6 +33,17 @@ export type LayoutInputArtist = {
 export type LayoutInput = {
   periods: LayoutInputPeriod[];
   artists: LayoutInputArtist[];
+  influences: { aSlug: string; bSlug: string; note: string | null }[];
+};
+
+export type ConstellationLink = {
+  key: string;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  color: string;
+  note: string | null;
 };
 
 export type StarArtist = {
@@ -71,6 +82,7 @@ export type Layout = {
   width: number;
   height: number;
   galaxies: Galaxy[];
+  links: ConstellationLink[];
 };
 
 /**
@@ -137,5 +149,27 @@ export function buildLayout(input: LayoutInput): Layout {
     };
   });
 
-  return { width, height, galaxies };
+  const pos = new Map<string, { x: number; y: number; color: string }>();
+  for (const g of galaxies) {
+    for (const a of g.artists) {
+      pos.set(a.slug, { x: a.x, y: a.y, color: g.color });
+    }
+  }
+  const links: ConstellationLink[] = [];
+  for (const inf of input.influences) {
+    const a = pos.get(inf.aSlug);
+    const b = pos.get(inf.bSlug);
+    if (!a || !b) continue;
+    links.push({
+      key: `${inf.aSlug}~${inf.bSlug}`,
+      ax: a.x,
+      ay: a.y,
+      bx: b.x,
+      by: b.y,
+      color: a.color,
+      note: inf.note,
+    });
+  }
+
+  return { width, height, galaxies, links };
 }

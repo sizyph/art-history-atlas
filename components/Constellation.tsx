@@ -264,6 +264,27 @@ function starPortrait(url: string | null): string | null {
   return url;
 }
 
+// A gently undulating path between two stars (an influence link).
+function wavyPath(ax: number, ay: number, bx: number, by: number): string {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len;
+  const py = dx / len;
+  const waves = Math.max(2, Math.round(len / 200));
+  const amp = Math.min(26, len * 0.05);
+  const N = waves * 10;
+  let d = "";
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const off = Math.sin(t * Math.PI * waves) * amp * Math.sin(t * Math.PI);
+    const x = ax + dx * t + px * off;
+    const y = ay + dy * t + py * off;
+    d += `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)} `;
+  }
+  return d;
+}
+
 export default function Constellation({ layout }: { layout: Layout }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -275,6 +296,12 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const [flying, setFlying] = useState(false);
   const [selected, setSelected] = useState<StarArtist | null>(null);
   const [highlight, setHighlight] = useState<string[] | null>(null);
+  const [linkTip, setLinkTip] = useState<{
+    key: string;
+    note: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const { locale } = useLocale();
   const t = useT();
 
@@ -532,6 +559,46 @@ export default function Constellation({ layout }: { layout: Layout }) {
                 />
               )),
             )}
+          {starsOn > 0 &&
+            layout.links.map((lk) => (
+              <g key={lk.key}>
+                <path
+                  d={wavyPath(lk.ax, lk.ay, lk.bx, lk.by)}
+                  fill="none"
+                  stroke="#5b93e0"
+                  strokeOpacity={linkTip?.key === lk.key ? 0.95 : 0.42 * starsOn}
+                  strokeWidth={linkTip?.key === lk.key ? 2.2 : 1.3}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {lk.note && (
+                  <path
+                    d={wavyPath(lk.ax, lk.ay, lk.bx, lk.by)}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={16}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ pointerEvents: "stroke", cursor: "help" }}
+                    onPointerEnter={(e) =>
+                      setLinkTip({
+                        key: lk.key,
+                        note: lk.note as string,
+                        x: e.clientX,
+                        y: e.clientY,
+                      })
+                    }
+                    onPointerMove={(e) =>
+                      setLinkTip((p) =>
+                        p && p.key === lk.key
+                          ? { ...p, x: e.clientX, y: e.clientY }
+                          : p,
+                      )
+                    }
+                    onPointerLeave={() => setLinkTip(null)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+              </g>
+            ))}
         </svg>
 
         {layout.galaxies.map((g, gi) => (
@@ -733,6 +800,25 @@ export default function Constellation({ layout }: { layout: Layout }) {
 
       {selected && (
         <ArtistCard artist={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {linkTip && (
+        <div
+          className="pointer-events-none fixed z-40 max-w-[300px] rounded-lg border border-line px-3 py-2 text-[12px] leading-snug text-ink-soft"
+          style={{
+            left: Math.min(linkTip.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1280) - 320),
+            top: linkTip.y + 16,
+            background: "rgba(20,17,12,0.96)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            boxShadow: "0 18px 50px -16px rgba(0,0,0,0.8)",
+          }}
+        >
+          <span className="mb-1 block text-[10px] uppercase tracking-[0.18em] text-[#5b93e0]">
+            ✦ Influence
+          </span>
+          {linkTip.note}
+        </div>
       )}
     </div>
   );

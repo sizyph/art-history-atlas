@@ -87,9 +87,29 @@ export const paintings = pgTable(
   (t) => [index("paintings_artist_idx").on(t.artistId)],
 );
 
+/**
+ * Influence links between two artists (Wikidata "influenced by"), with a short
+ * anecdote mined from the influenced artist's Wikipedia article.
+ */
+export const influences = pgTable(
+  "influences",
+  {
+    id: serial("id").primaryKey(),
+    artistId: integer("artist_id")
+      .notNull()
+      .references(() => artists.id),
+    influencerId: integer("influencer_id")
+      .notNull()
+      .references(() => artists.id),
+    note: text("note"),
+  },
+  (t) => [index("influences_artist_idx").on(t.artistId)],
+);
+
 export type Period = typeof periods.$inferSelect;
 export type Artist = typeof artists.$inferSelect;
 export type Painting = typeof paintings.$inferSelect;
+export type Influence = typeof influences.$inferSelect;
 export type NewPeriod = typeof periods.$inferInsert;
 export type NewArtist = typeof artists.$inferInsert;
 export type NewPainting = typeof paintings.$inferInsert;
