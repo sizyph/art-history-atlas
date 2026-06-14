@@ -4,6 +4,7 @@ import "./globals.css";
 import { LocaleProvider } from "@/components/LocaleProvider";
 import { AudioProvider } from "@/components/AudioProvider";
 import AudioControl from "@/components/AudioControl";
+import FullscreenButton from "@/components/FullscreenButton";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -37,6 +38,7 @@ export default function RootLayout({
           <AudioProvider>
             {children}
             <AudioControl />
+            <FullscreenButton />
           </AudioProvider>
         </LocaleProvider>
       </body>
