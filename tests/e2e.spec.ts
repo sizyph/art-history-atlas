@@ -64,14 +64,10 @@ test("museum renders and a painting opens the inspect lightbox", async ({
   // Side-wall paintings sit at mid-height near the left/right edges. Probe a
   // few spots until the raycast hits a frame and the lightbox opens.
   const credit = page.getByText("Wikimedia Commons");
-  const probes: [number, number][] = [
-    [0.1, 0.42],
-    [0.06, 0.4],
-    [0.14, 0.45],
-    [0.9, 0.42],
-    [0.86, 0.45],
-    [0.94, 0.4],
-  ];
+  const probes: [number, number][] = [];
+  for (const fx of [0.92, 0.96, 0.88, 0.82, 0.76, 0.1, 0.06, 0.14]) {
+    for (const fy of [0.42, 0.47, 0.52]) probes.push([fx, fy]);
+  }
   let opened = false;
   for (const [fx, fy] of probes) {
     await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
