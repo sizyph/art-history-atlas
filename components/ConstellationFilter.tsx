@@ -10,12 +10,14 @@ type Props = {
   galaxies: Galaxy[];
   onPickPeriod: (g: Galaxy) => void;
   onPickArtist: (g: Galaxy, a: StarArtist) => void;
+  onResults: (slugs: string[]) => void;
 };
 
 export default function ConstellationFilter({
   galaxies,
   onPickPeriod,
   onPickArtist,
+  onResults,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"movements" | "artists">("movements");
@@ -46,7 +48,13 @@ export default function ConstellationFilter({
   }, [tab, q, open]);
 
   const ql = q.trim().toLowerCase();
-  const periods = galaxies.filter((g) => !ql || g.name.toLowerCase().includes(ql));
+  const periods = galaxies.filter((g) => {
+    if (!ql) return true;
+    return (
+      g.name.toLowerCase().includes(ql) ||
+      periodName(locale, g.name).toLowerCase().includes(ql)
+    );
+  });
   const artists = galaxies
     .flatMap((g) => g.artists.map((a) => ({ g, a })))
     .filter(({ a }) => {
@@ -57,6 +65,21 @@ export default function ConstellationFilter({
       );
     });
   const empty = (tab === "movements" ? periods.length : artists.length) === 0;
+
+  const resultSlugs =
+    tab === "movements"
+      ? periods.map((g) => g.slug)
+      : [...new Set(artists.map(({ g }) => g.slug))];
+  const resultKey = resultSlugs.join(",");
+
+  // As the search narrows (while open), tell the constellation to frame +
+  // brighten the matches; debounced so fast typing doesn't thrash the camera.
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setTimeout(() => onResults(resultSlugs), 220);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, resultKey]);
 
   return (
     <div className="pointer-events-auto absolute left-1/2 top-5 z-30 -translate-x-1/2">

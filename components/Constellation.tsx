@@ -168,7 +168,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const [ready, setReady] = useState(false);
   const [flying, setFlying] = useState(false);
   const [selected, setSelected] = useState<StarArtist | null>(null);
-  const [highlight, setHighlight] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState<string[] | null>(null);
   const { locale } = useLocale();
   const t = useT();
 
@@ -264,15 +264,53 @@ export default function Constellation({ layout }: { layout: Layout }) {
     if (v) flyTo(v);
   };
 
+  // Frame a set of movements (and their artists) within the viewport.
+  const flyToFit = (slugs: string[]) => {
+    const gs = layout.galaxies.filter((g) => slugs.includes(g.slug));
+    if (!gs.length) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const g of gs) {
+      for (const p of [{ x: g.x, y: g.y }, ...g.artists]) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+    const pad = 320;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const vw = window.innerWidth || 1280;
+    const vh = window.innerHeight || 720;
+    const scale = Math.max(
+      0.2,
+      Math.min(vw / (maxX - minX + pad * 2), vh / (maxY - minY + pad * 2), 1.8),
+    );
+    flyTo({ scale, x: vw / 2 - cx * scale, y: vh / 2 - cy * scale });
+  };
+
   const pickPeriod = (g: Galaxy) => {
-    setHighlight(g.slug);
+    setHighlight([g.slug]);
     flyToPeriod(g);
   };
 
   const pickArtist = (g: Galaxy, a: StarArtist) => {
-    setHighlight(g.slug);
+    setHighlight([g.slug]);
     flyToPeriod(g);
     window.setTimeout(() => setSelected(a), 650);
+  };
+
+  // Live response as the filter search narrows: brighten + frame the matches.
+  const previewResults = (slugs: string[]) => {
+    if (slugs.length > 0 && slugs.length < layout.galaxies.length) {
+      setHighlight(slugs);
+      flyToFit(slugs);
+    } else {
+      setHighlight(null);
+    }
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -360,7 +398,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
             style={{
               left: g.x,
               top: g.y,
-              opacity: !highlight || highlight === g.slug ? 1 : 0.16,
+              opacity: !highlight || highlight.includes(g.slug) ? 1 : 0.16,
               transition: "opacity 0.6s ease",
             }}
           >
@@ -445,7 +483,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
                   left: a.x,
                   top: a.y,
                   opacity:
-                    starsOn * (!highlight || highlight === g.slug ? 1 : 0.16),
+                    starsOn * (!highlight || highlight.includes(g.slug) ? 1 : 0.16),
                 }}
               >
                 <button
@@ -514,6 +552,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
         galaxies={layout.galaxies}
         onPickPeriod={pickPeriod}
         onPickArtist={pickArtist}
+        onResults={previewResults}
       />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-5 text-center text-[11px] uppercase tracking-[0.3em] text-ink-faint">
