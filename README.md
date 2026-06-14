@@ -2,7 +2,7 @@
 
 # ars gratia artis
 
-### *A star-map of every master in art history — step through any star and walk their gallery.*
+### *A fancy night walk under the shining masters that illuminate the world's art galleries.*
 
 **[✦ Enter the museum →](https://nuit-etoilee.vercel.app)**
 
