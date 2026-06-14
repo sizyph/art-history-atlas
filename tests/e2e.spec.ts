@@ -20,7 +20,7 @@ test("explore filter swaps movements/artists and searches", async ({ page }) => 
   await page.getByRole("button", { name: /explore/i }).click();
   await expect(page.getByPlaceholder(/search movements/i)).toBeVisible();
 
-  await page.getByRole("button", { name: "artists", exact: true }).click();
+  await page.getByRole("button", { name: /^artists$/i }).click();
   const search = page.getByPlaceholder(/search artists/i);
   await expect(search).toBeVisible();
   await search.fill("monet");

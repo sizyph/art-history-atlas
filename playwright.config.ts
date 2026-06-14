@@ -14,6 +14,7 @@ export default defineConfig({
   use: {
     baseURL: BASE,
     headless: true,
+    locale: "en-US",
     viewport: { width: 1366, height: 820 },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
