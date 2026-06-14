@@ -8,6 +8,17 @@ import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized, periodName } from "@/lib/i18n";
 
+type Star = {
+  x: number;
+  y: number;
+  r: number;
+  baseA: number;
+  color: string;
+  ph: number;
+  sp: number;
+  tw: number;
+};
+
 function Starfield() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -16,36 +27,128 @@ function Starfield() {
     const ctx = cvs.getContext("2d");
     if (!ctx) return;
 
-    const draw = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+    let w = 0;
+    let h = 0;
+    let stars: Star[] = [];
+    let raf = 0;
+    let last = 0;
+    // warm white, blue-white, amber, warm — realistic star colours
+    const COLORS = ["236,230,218", "208,219,240", "247,226,201", "255,243,228"];
+
+    const build = () => {
+      const parent = cvs.parentElement;
+      w = parent?.clientWidth || window.innerWidth;
+      h = parent?.clientHeight || window.innerHeight;
+      if (!w || !h) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       cvs.width = w * dpr;
       cvs.height = h * dpr;
       cvs.style.width = `${w}px`;
       cvs.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
+
       let s = 9301;
       const rnd = () => {
         s = (s * 9301 + 49297) % 233280;
         return s / 233280;
       };
-      for (let i = 0; i < 280; i++) {
+      stars = [];
+      for (let i = 0; i < 820; i++) {
         const x = rnd() * w;
         const y = rnd() * h;
-        const r = rnd() * 1.3 + 0.2;
-        const a = rnd() * 0.5 + 0.08;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(236,230,218,${a})`;
-        ctx.fill();
+        const bright = rnd();
+        const r = bright > 0.9 ? rnd() * 1.6 + 1.0 : rnd() * 1.05 + 0.35;
+        const baseA = bright > 0.9 ? rnd() * 0.35 + 0.55 : rnd() * 0.42 + 0.24;
+        const dawnFade = 1 - 0.32 * (x / w); // stars wash out toward the dawn (right)
+        stars.push({
+          x,
+          y,
+          r,
+          baseA: baseA * dawnFade,
+          color: COLORS[Math.floor(rnd() * COLORS.length)],
+          ph: rnd() * Math.PI * 2,
+          sp: rnd() * 0.9 + 0.25,
+          tw: bright > 0.55 ? 1 : 0.35,
+        });
+      }
+      // a faint Milky Way band, bottom-left → upper-right
+      for (let i = 0; i < 210; i++) {
+        const t = rnd();
+        const bx = t * w;
+        const by = h * 0.82 - t * h * 0.6 + (rnd() - 0.5) * h * 0.16;
+        const dawnFade = 1 - 0.42 * (bx / w);
+        stars.push({
+          x: bx,
+          y: by,
+          r: rnd() * 0.85 + 0.3,
+          baseA: (rnd() * 0.3 + 0.16) * dawnFade,
+          color: "236,231,223",
+          ph: rnd() * Math.PI * 2,
+          sp: rnd() * 0.8 + 0.25,
+          tw: 0.5,
+        });
       }
     };
 
-    draw();
-    window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
+    const paintBg = () => {
+      // deep cold night → faintly warmer, lighter pre-dawn (left → right)
+      const base = ctx.createLinearGradient(0, 0, w, 0);
+      base.addColorStop(0, "#04050b");
+      base.addColorStop(0.5, "#0a0a14");
+      base.addColorStop(1, "#221a14");
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, w, h);
+
+      // dawn glow rising on the right edge
+      const dawn = ctx.createRadialGradient(
+        w * 1.05,
+        h * 0.66,
+        0,
+        w * 1.05,
+        h * 0.66,
+        w * 0.78,
+      );
+      dawn.addColorStop(0, "rgba(150,104,66,0.26)");
+      dawn.addColorStop(0.5, "rgba(96,72,62,0.09)");
+      dawn.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = dawn;
+      ctx.fillRect(0, 0, w, h);
+    };
+
+    const frame = (t: number) => {
+      raf = requestAnimationFrame(frame);
+      if (t - last < 33) return; // ~30fps is plenty for a calm twinkle
+      last = t;
+      if (!w || !h) return;
+      const time = t / 1000;
+      ctx.clearRect(0, 0, w, h);
+      paintBg();
+      for (const st of stars) {
+        const tw = 1 + st.tw * 0.32 * Math.sin(time * st.sp + st.ph);
+        const a = Math.max(0, Math.min(1, st.baseA * tw));
+        if (a <= 0.01) continue;
+        ctx.beginPath();
+        ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${st.color},${a})`;
+        ctx.fill();
+        if (st.r > 1.0) {
+          ctx.beginPath();
+          ctx.arc(st.x, st.y, st.r * 2.8, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${st.color},${a * 0.1})`;
+          ctx.fill();
+        }
+      }
+    };
+
+    build();
+    [120, 400, 900, 1600].forEach((d) => window.setTimeout(build, d));
+    raf = requestAnimationFrame(frame);
+    const ro = new ResizeObserver(() => build());
+    ro.observe(cvs.parentElement ?? cvs);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
 
   return (
@@ -396,17 +499,12 @@ export default function Constellation({ layout }: { layout: Layout }) {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.55) 100%)",
+            "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
         }}
       />
 
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-7 py-6">
-        <div className="flex items-center gap-4">
-          <div className="font-display text-xl tracking-wide text-ink">
-            Constellation
-          </div>
-          <LangSwitcher />
-        </div>
+        <LangSwitcher />
         <div className="hidden text-[11px] uppercase tracking-[0.3em] text-ink-faint sm:block">
           {t("tagline")}
         </div>
