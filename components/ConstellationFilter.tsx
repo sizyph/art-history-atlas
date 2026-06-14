@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import type { Galaxy, StarArtist } from "@/lib/timeline";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { periodName } from "@/lib/i18n";
 
 type Props = {
   galaxies: Galaxy[];
@@ -20,6 +22,8 @@ export default function ConstellationFilter({
   const [q, setQ] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const tr = useT();
+  const { locale } = useLocale();
 
   useEffect(() => {
     if (open && panelRef.current) {
@@ -54,7 +58,7 @@ export default function ConstellationFilter({
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-5 py-2.5 text-[11px] uppercase tracking-[0.22em] text-ink backdrop-blur transition-colors hover:bg-black/60"
       >
-        <span className="text-gold">✦</span> Explore
+        <span className="text-gold">✦</span> {tr("explore")}
       </button>
 
       {open && (
@@ -80,7 +84,7 @@ export default function ConstellationFilter({
                   color: tab === t ? "var(--gold)" : "var(--ink-soft)",
                 }}
               >
-                {t}
+                {tr(t)}
               </button>
             ))}
           </div>
@@ -89,7 +93,11 @@ export default function ConstellationFilter({
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={`Search ${tab}…`}
+              placeholder={
+                tab === "movements"
+                  ? tr("searchMovements")
+                  : tr("searchArtists")
+              }
               className="w-full rounded-lg border border-line bg-black/30 px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-gold-soft"
             />
           </div>
@@ -110,7 +118,9 @@ export default function ConstellationFilter({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ background: g.color, boxShadow: `0 0 8px ${g.color}` }}
                     />
-                    <span className="flex-1 text-[13px] text-ink">{g.name}</span>
+                    <span className="flex-1 text-[13px] text-ink">
+                      {periodName(locale, g.name)}
+                    </span>
                     <span className="text-[11px] text-ink-faint">
                       {g.startYear}
                     </span>
@@ -131,12 +141,14 @@ export default function ConstellationFilter({
                       style={{ background: g.color }}
                     />
                     <span className="flex-1 text-[13px] text-ink">{a.name}</span>
-                    <span className="text-[11px] text-ink-faint">{g.name}</span>
+                    <span className="text-[11px] text-ink-faint">
+                      {periodName(locale, g.name)}
+                    </span>
                   </button>
                 ))}
             {empty && (
               <div className="px-3 py-6 text-center text-[12px] text-ink-faint">
-                No matches
+                {tr("noMatches")}
               </div>
             )}
           </div>

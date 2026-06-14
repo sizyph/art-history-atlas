@@ -16,6 +16,9 @@ import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
+import LangSwitcher from "@/components/LangSwitcher";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { periodName } from "@/lib/i18n";
 
 const WALL_COLOR = "#1b1712";
 const SPACING = 3.6;
@@ -375,6 +378,8 @@ export default function Gallery({
 }) {
   const { hangs, depth } = useHangs(paintings);
   const accent = period?.color ?? "#c9a24b";
+  const t = useT();
+  const { locale } = useLocale();
   const [inspect, setInspect] = useState<Painting | null>(null);
   const moving = useRef(true);
   const didDrag = useRef(false);
@@ -457,11 +462,12 @@ export default function Gallery({
         >
           ← Constellation
         </Link>
+        <LangSwitcher />
         <div className="text-right">
           <div className="font-display text-lg text-ink">{artist.name}</div>
           {period && (
             <div className="text-[11px] uppercase tracking-[0.25em] text-ink-faint">
-              {period.name}
+              {periodName(locale, period.name)}
             </div>
           )}
         </div>
@@ -498,6 +504,7 @@ function FadeIn() {
 }
 
 function HintBanner() {
+  const t = useT();
   const [hide, setHide] = useState(false);
   useEffect(() => {
     const onDown = () => setHide(true);
@@ -514,7 +521,7 @@ function HintBanner() {
       style={{ opacity: hide ? 0 : 1, transition: "opacity 0.6s ease" }}
     >
       <span className="rounded-full border border-white/15 bg-black/45 px-6 py-3 text-[12px] uppercase tracking-[0.25em] text-ink backdrop-blur">
-        Drag to look · WASD to walk · click a painting
+        {t("museumHint")}
       </span>
     </div>
   );

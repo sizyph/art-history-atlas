@@ -1,0 +1,121 @@
+export type Locale = "en" | "fr" | "ja";
+
+export const LOCALES: Locale[] = ["en", "fr", "ja"];
+export const LOCALE_LABELS: Record<Locale, string> = {
+  en: "EN",
+  fr: "FR",
+  ja: "日本語",
+};
+
+type Dict = Record<string, string>;
+
+const en: Dict = {
+  tagline: "Atlas of Art History",
+  explore: "Explore",
+  movements: "Movements",
+  artists: "Artists",
+  searchMovements: "Search movements…",
+  searchArtists: "Search artists…",
+  noMatches: "No matches",
+  enterMuseum: "Enter the museum",
+  works: "{n} works",
+  biographyUnavailable: "Biography unavailable.",
+  galleryUnavailable:
+    "Gallery unavailable — this artist’s work is still in copyright, so no public-domain images exist on Commons.",
+  dateUnknown: "Date unknown",
+  backConstellation: "Back to the constellation",
+  scrollHint: "Scroll to zoom · drag to pan · click a movement",
+  museumHint: "Drag to look · WASD to walk · click a painting",
+  noWorksBody:
+    "No public-domain works for {name} are on Wikimedia Commons yet, so there’s no gallery to walk. Their biography still lives on the timeline.",
+  wikipedia: "Wikipedia",
+};
+
+const fr: Dict = {
+  tagline: "Atlas de l’histoire de l’art",
+  explore: "Explorer",
+  movements: "Mouvements",
+  artists: "Artistes",
+  searchMovements: "Rechercher un mouvement…",
+  searchArtists: "Rechercher un artiste…",
+  noMatches: "Aucun résultat",
+  enterMuseum: "Entrer dans le musée",
+  works: "{n} œuvres",
+  biographyUnavailable: "Biographie indisponible.",
+  galleryUnavailable:
+    "Galerie indisponible — l’œuvre de cet artiste est encore sous droits d’auteur ; aucune image du domaine public n’existe sur Commons.",
+  dateUnknown: "Date inconnue",
+  backConstellation: "Retour à la constellation",
+  scrollHint: "Molette pour zoomer · glisser pour déplacer · cliquer un mouvement",
+  museumHint: "Glisser pour regarder · WASD pour marcher · cliquer un tableau",
+  noWorksBody:
+    "Aucune œuvre de {name} dans le domaine public n’est encore sur Wikimedia Commons ; il n’y a donc pas de galerie à parcourir. Sa biographie demeure sur la frise.",
+  wikipedia: "Wikipédia",
+};
+
+const ja: Dict = {
+  tagline: "美術史の星図",
+  explore: "探索",
+  movements: "様式",
+  artists: "画家",
+  searchMovements: "様式を検索…",
+  searchArtists: "画家を検索…",
+  noMatches: "該当なし",
+  enterMuseum: "美術館に入る",
+  works: "{n}点の作品",
+  biographyUnavailable: "略歴はありません。",
+  galleryUnavailable:
+    "ギャラリーは利用できません — この画家の作品はまだ著作権が有効で、コモンズにパブリックドメイン画像がありません。",
+  dateUnknown: "制作年不明",
+  backConstellation: "星座に戻る",
+  scrollHint: "スクロールでズーム · ドラッグで移動 · 様式をクリック",
+  museumHint: "ドラッグで視点 · WASDで移動 · 絵画をクリック",
+  noWorksBody:
+    "{name}のパブリックドメイン作品はまだウィキメディア・コモンズにないため、巡れるギャラリーはありません。略歴はタイムラインでご覧いただけます。",
+  wikipedia: "ウィキペディア",
+};
+
+export const DICT: Record<Locale, Dict> = { en, fr, ja };
+
+export function translate(
+  locale: Locale,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  let s = DICT[locale]?.[key] ?? DICT.en[key] ?? key;
+  if (vars) {
+    for (const k of Object.keys(vars)) {
+      s = s.replace(`{${k}}`, String(vars[k]));
+    }
+  }
+  return s;
+}
+
+/** Movement names are a fixed curated set, so they live here (not the DB). */
+export const PERIOD_NAMES: Record<string, { fr: string; ja: string }> = {
+  "Medieval & Gothic": { fr: "Médiéval et gothique", ja: "中世・ゴシック" },
+  "Early Renaissance": { fr: "Première Renaissance", ja: "初期ルネサンス" },
+  "High Renaissance": { fr: "Haute Renaissance", ja: "盛期ルネサンス" },
+  "Northern Renaissance": { fr: "Renaissance nordique", ja: "北方ルネサンス" },
+  Baroque: { fr: "Baroque", ja: "バロック" },
+  Rococo: { fr: "Rococo", ja: "ロココ" },
+  Neoclassicism: { fr: "Néoclassicisme", ja: "新古典主義" },
+  Romanticism: { fr: "Romantisme", ja: "ロマン主義" },
+  Realism: { fr: "Réalisme", ja: "写実主義" },
+  Impressionism: { fr: "Impressionnisme", ja: "印象派" },
+  "Post-Impressionism": { fr: "Post-impressionnisme", ja: "ポスト印象派" },
+  Expressionism: { fr: "Expressionnisme", ja: "表現主義" },
+  Cubism: { fr: "Cubisme", ja: "キュビスム" },
+  Surrealism: { fr: "Surréalisme", ja: "シュルレアリスム" },
+  "Abstract Expressionism": {
+    fr: "Expressionnisme abstrait",
+    ja: "抽象表現主義",
+  },
+  "Pop Art": { fr: "Pop art", ja: "ポップ・アート" },
+  Contemporary: { fr: "Contemporain", ja: "現代美術" },
+};
+
+export function periodName(locale: Locale, enName: string): string {
+  if (locale === "en") return enName;
+  return PERIOD_NAMES[enName]?.[locale] ?? enName;
+}

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Galaxy, Layout, StarArtist } from "@/lib/timeline";
 import ArtistCard from "@/components/ArtistCard";
 import ConstellationFilter from "@/components/ConstellationFilter";
+import LangSwitcher from "@/components/LangSwitcher";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { periodName } from "@/lib/i18n";
 
 function Starfield() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -63,6 +66,8 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const [flying, setFlying] = useState(false);
   const [selected, setSelected] = useState<StarArtist | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
+  const { locale } = useLocale();
+  const t = useT();
 
   const computeFit = (): View | null => {
     if (typeof window === "undefined") return null;
@@ -311,7 +316,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
                 className="font-display font-medium"
                 style={{ color: "#efe9dd", fontSize: 20, lineHeight: 1.05 }}
               >
-                {g.name}
+                {periodName(locale, g.name)}
               </div>
               <div
                 style={{
@@ -396,11 +401,14 @@ export default function Constellation({ layout }: { layout: Layout }) {
       />
 
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-7 py-6">
-        <div className="font-display text-xl tracking-wide text-ink">
-          Constellation
+        <div className="flex items-center gap-4">
+          <div className="font-display text-xl tracking-wide text-ink">
+            Constellation
+          </div>
+          <LangSwitcher />
         </div>
-        <div className="text-[11px] uppercase tracking-[0.3em] text-ink-faint">
-          Atlas of Art History
+        <div className="hidden text-[11px] uppercase tracking-[0.3em] text-ink-faint sm:block">
+          {t("tagline")}
         </div>
       </header>
 
@@ -411,7 +419,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
       />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-5 text-center text-[11px] uppercase tracking-[0.3em] text-ink-faint">
-        Scroll to zoom · drag to pan · click a movement
+        {t("scrollHint")}
       </div>
 
       {selected && (

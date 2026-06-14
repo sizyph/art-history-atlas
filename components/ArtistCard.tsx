@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { StarArtist } from "@/lib/timeline";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { periodName } from "@/lib/i18n";
 
 export default function ArtistCard({
   artist,
@@ -14,6 +16,8 @@ export default function ArtistCard({
   const [shown, setShown] = useState(false);
   const [entering, setEntering] = useState(false);
   const router = useRouter();
+  const t = useT();
+  const { locale } = useLocale();
 
   const startEnter = () => {
     setEntering(true);
@@ -36,7 +40,9 @@ export default function ArtistCard({
     artist.birthYear != null || artist.deathYear != null
       ? `${artist.birthYear ?? "?"} – ${artist.deathYear ?? "?"}`
       : null;
-  const sub = [artist.nationality, artist.periodName].filter(Boolean).join(" · ");
+  const sub = [artist.nationality, periodName(locale, artist.periodName)]
+    .filter(Boolean)
+    .join(" · ");
   const canEnter = artist.paintingCount > 0;
 
   return (
@@ -136,7 +142,7 @@ export default function ArtistCard({
               overflow: "hidden",
             }}
           >
-            {artist.bio ?? "Biography unavailable."}
+            {artist.bio ?? t("biographyUnavailable")}
           </p>
         </div>
 
@@ -147,20 +153,21 @@ export default function ArtistCard({
               className="group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-transform hover:scale-[1.02]"
               style={{ background: artist.periodColor, color: "#15120E" }}
             >
-              Enter the museum
+              {t("enterMuseum")}
               <span className="transition-transform group-hover:translate-x-0.5">
                 →
               </span>
             </button>
           ) : (
             <span className="max-w-[60%] text-[12px] leading-snug text-ink-faint">
-              Gallery unavailable — this artist&rsquo;s work is still in
-              copyright, so no public-domain images exist on Commons.
+              {t("galleryUnavailable")}
             </span>
           )}
           <div className="shrink-0 text-right text-[11px] text-ink-faint">
             {artist.paintingCount > 0 && (
-              <div className="mb-0.5">{artist.paintingCount} works</div>
+              <div className="mb-0.5">
+                {t("works", { n: artist.paintingCount })}
+              </div>
             )}
             {artist.wikipediaUrl && (
               <a
@@ -169,7 +176,7 @@ export default function ArtistCard({
                 rel="noopener noreferrer"
                 className="underline underline-offset-2 hover:text-ink-soft"
               >
-                Wikipedia
+                {t("wikipedia")}
               </a>
             )}
           </div>

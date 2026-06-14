@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Painting } from "@/db/schema";
+import { useT } from "@/components/LocaleProvider";
 
 export default function InspectOverlay({
   painting,
@@ -13,6 +14,7 @@ export default function InspectOverlay({
   onClose: () => void;
 }) {
   const [shown, setShown] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     const r = requestAnimationFrame(() => setShown(true));
@@ -69,7 +71,7 @@ export default function InspectOverlay({
               {painting.title}
             </h2>
             <div className="mt-1 text-sm" style={{ color: accent }}>
-              {painting.year ?? "Date unknown"}
+              {painting.year ?? t("dateUnknown")}
               {painting.location ? ` · ${painting.location}` : ""}
             </div>
           </div>
@@ -113,7 +115,7 @@ export default function InspectOverlay({
                   rel="noopener noreferrer"
                   className="underline underline-offset-2 hover:text-ink-soft"
                 >
-                  Wikipedia
+                  {t("wikipedia")}
                 </a>
               )}
             </div>
