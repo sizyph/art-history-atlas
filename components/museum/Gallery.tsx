@@ -25,11 +25,15 @@ import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
 import { localized, periodName } from "@/lib/i18n";
+import {
+  frameProfile,
+  type DescPalette,
+  type FrameProfile,
+  type Museum,
+} from "@/lib/museums";
+import { makeWood, makeConcrete, makeStone } from "@/components/museum/textures";
 
-const WALL_COLOR = "#1b1712";
 const SPACING = 3.6;
-const WALL_HEIGHT = 4.4;
-const ROOM_WIDTH = 9;
 const EYE = 1.65;
 
 function wallTextureUrl(p: Painting) {
@@ -48,13 +52,17 @@ type Hang = {
   rotation: [number, number, number];
 };
 
-function useHangs(paintings: Painting[]): {
+function useHangs(
+  paintings: Painting[],
+  roomWidth: number,
+  descReserve: number,
+): {
   hangs: Hang[];
   depth: number;
   descZ: number;
 } {
   return useMemo(() => {
-    const DESC = 3.6; // left-wall length reserved for the description, at the entrance
+    const DESC = descReserve; // left-wall length reserved for the description
     const perSide = Math.ceil(paintings.length / 2);
     const depth = Math.max(perSide * SPACING + DESC + 3, 16);
     const front = depth / 2;
@@ -80,28 +88,192 @@ function useHangs(paintings: Painting[]): {
     left.forEach((p, i) =>
       hangs.push({
         p,
-        position: [-ROOM_WIDTH / 2 + 0.08, EYE, lz[i]],
+        position: [-roomWidth / 2 + 0.08, EYE, lz[i]],
         rotation: [0, Math.PI / 2, 0],
       }),
     );
     right.forEach((p, i) =>
       hangs.push({
         p,
-        position: [ROOM_WIDTH / 2 - 0.08, EYE, rz[i]],
+        position: [roomWidth / 2 - 0.08, EYE, rz[i]],
         rotation: [0, -Math.PI / 2, 0],
       }),
     );
     return { hangs, depth, descZ };
-  }, [paintings]);
+  }, [paintings, roomWidth, descReserve]);
+}
+
+// One beveled rectangular moulding (outer rect with a hole) as a single
+// extruded mesh — the bevel catches the picture light like real carved relief.
+function ringGeometry(
+  openW: number,
+  openH: number,
+  border: number,
+  depth: number,
+  bevel: boolean,
+): THREE.ExtrudeGeometry {
+  const ow = openW / 2 + border;
+  const oh = openH / 2 + border;
+  const iw = openW / 2;
+  const ih = openH / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(-ow, -oh);
+  shape.lineTo(ow, -oh);
+  shape.lineTo(ow, oh);
+  shape.lineTo(-ow, oh);
+  shape.closePath();
+  const hole = new THREE.Path();
+  hole.moveTo(-iw, -ih);
+  hole.lineTo(-iw, ih);
+  hole.lineTo(iw, ih);
+  hole.lineTo(iw, -ih);
+  hole.closePath();
+  shape.holes.push(hole);
+  const bevelT = Math.min(border * 0.45, depth * 0.6);
+  return new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.01, depth - bevelT),
+    bevelEnabled: bevel,
+    bevelThickness: bevelT,
+    bevelSize: bevel ? border * 0.42 : 0,
+    bevelSegments: 2,
+    steps: 1,
+  });
+}
+
+function Moulding({
+  w,
+  h,
+  prof,
+}: {
+  w: number;
+  h: number;
+  prof: FrameProfile;
+}) {
+  const openW = w + prof.mat * 2;
+  const openH = h + prof.mat * 2;
+
+  const main = useMemo(
+    () =>
+      ringGeometry(
+        openW,
+        openH,
+        prof.border,
+        prof.depth,
+        prof.style === "ornate" || prof.style === "wood",
+      ),
+    [openW, openH, prof.border, prof.depth, prof.style],
+  );
+  const lip = useMemo(
+    () => (prof.lip ? ringGeometry(openW, openH, 0.022, 0.03, true) : null),
+    [openW, openH, prof.lip],
+  );
+  const outer = useMemo(
+    () =>
+      prof.steps === 3
+        ? ringGeometry(
+            openW + prof.border * 2,
+            openH + prof.border * 2,
+            0.03,
+            prof.depth * 1.25,
+            true,
+          )
+        : null,
+    [openW, openH, prof.border, prof.depth, prof.steps],
+  );
+  useEffect(
+    () => () => {
+      main.dispose();
+      lip?.dispose();
+      outer?.dispose();
+    },
+    [main, lip, outer],
+  );
+
+  if (prof.style === "none") {
+    return (
+      <mesh position={[0, 0, -prof.depth / 2]}>
+        <boxGeometry args={[w + 0.012, h + 0.012, prof.depth]} />
+        <meshStandardMaterial
+          color={prof.color}
+          roughness={prof.roughness}
+          metalness={prof.metalness}
+        />
+      </mesh>
+    );
+  }
+  if (prof.style === "float") {
+    const bw = w + prof.gap * 2 + prof.border * 2;
+    const bh = h + prof.gap * 2 + prof.border * 2;
+    return (
+      <mesh position={[0, 0, -prof.depth / 2]} castShadow>
+        <boxGeometry args={[bw, bh, prof.depth]} />
+        <meshStandardMaterial
+          color={prof.color}
+          roughness={prof.roughness}
+          metalness={prof.metalness}
+        />
+      </mesh>
+    );
+  }
+
+  // ornate / wood / silk: beveled moulding (+ optional carved relief)
+  const front = 0.055;
+  return (
+    <group>
+      {outer && (
+        <mesh
+          geometry={outer}
+          position={[0, 0, front - prof.depth * 1.25 + 0.002]}
+          castShadow
+          receiveShadow
+        >
+          <meshStandardMaterial
+            color={prof.color}
+            metalness={prof.metalness}
+            roughness={prof.roughness + 0.08}
+          />
+        </mesh>
+      )}
+      <mesh
+        geometry={main}
+        position={[0, 0, front - prof.depth]}
+        castShadow
+        receiveShadow
+      >
+        <meshStandardMaterial
+          color={prof.color}
+          metalness={prof.metalness}
+          roughness={prof.roughness}
+        />
+      </mesh>
+      {lip && (
+        <mesh geometry={lip} position={[0, 0, front - 0.028]}>
+          <meshStandardMaterial
+            color={prof.color}
+            metalness={Math.min(1, prof.metalness + 0.1)}
+            roughness={Math.max(0.2, prof.roughness - 0.12)}
+          />
+        </mesh>
+      )}
+      {prof.mat > 0 && (
+        <mesh position={[0, 0, front - prof.depth + 0.01]}>
+          <planeGeometry args={[openW, openH]} />
+          <meshStandardMaterial color={prof.matColor} roughness={0.95} />
+        </mesh>
+      )}
+    </group>
+  );
 }
 
 function PaintingFrame({
   hang,
-  accent,
+  prof,
+  light,
   onInspect,
 }: {
   hang: Hang;
-  accent: string;
+  prof: FrameProfile;
+  light: Museum["pictureLight"];
   onInspect: (p: Painting) => void;
 }) {
   const tex = useTexture(wallTextureUrl(hang.p));
@@ -136,24 +308,14 @@ function PaintingFrame({
     w = maxW;
     h = w / aspect;
   }
-  const fw = w + 0.18;
-  const fh = h + 0.18;
+  const fh = h + (prof.mat + prof.border) * 2;
 
   return (
     <group position={hang.position} rotation={hang.rotation}>
-      {/* frame */}
-      <mesh position={[0, 0, -0.05]} castShadow receiveShadow>
-        <boxGeometry args={[fw, fh, 0.1]} />
-        <meshStandardMaterial color={accent} metalness={0.4} roughness={0.42} />
-      </mesh>
-      {/* inner mat */}
-      <mesh position={[0, 0, 0.005]}>
-        <planeGeometry args={[w + 0.04, h + 0.04]} />
-        <meshStandardMaterial color="#0e0c0a" roughness={1} />
-      </mesh>
+      <Moulding w={w} h={h} prof={prof} />
       {/* canvas */}
       <mesh
-        position={[0, 0, 0.02]}
+        position={[0, 0, 0.045]}
         castShadow
         onClick={(e) => {
           e.stopPropagation();
@@ -166,94 +328,246 @@ function PaintingFrame({
         <meshStandardMaterial map={tex} roughness={0.62} metalness={0} />
       </mesh>
       {/* picture light */}
-      <spotLight
-        ref={lightRef}
-        position={[0, fh / 2 + 0.85, 1.7]}
-        angle={0.66}
-        penumbra={0.85}
-        distance={10}
-        intensity={42}
-        color="#fff2dc"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-bias={-0.0004}
-      />
-      <object3D ref={targetRef} position={[0, 0, 0.1]} />
+      {light.show && (
+        <>
+          <spotLight
+            ref={lightRef}
+            position={[0, fh / 2 + 0.85, 1.7]}
+            angle={light.angle}
+            penumbra={0.85}
+            distance={10}
+            intensity={light.intensity}
+            color={light.color}
+          />
+          <object3D ref={targetRef} position={[0, 0, 0.1]} />
+        </>
+      )}
     </group>
   );
 }
 
-function Room({ depth }: { depth: number }) {
-  const wallProps = {
-    receiveShadow: true,
-  } as const;
+function useRoomTextures(museum: Museum, depth: number) {
+  const textures = useMemo(() => {
+    const ry = Math.max(4, Math.round(depth / 2.2));
+    const rx = Math.max(3, Math.round(museum.roomWidth / 2.2));
+    const floor =
+      museum.floor === "parquet"
+        ? makeWood(museum.floorColor, { planks: 5, repeat: [rx, ry] })
+        : museum.floor === "plank"
+          ? makeWood(museum.floorColor, { planks: 6, repeat: [rx, ry] })
+          : museum.floor === "concrete"
+            ? makeConcrete(museum.floorColor, [rx, ry])
+            : museum.floor === "stone"
+              ? makeStone(museum.floorColor, [rx, ry])
+              : null;
+    const wall =
+      museum.wallKind === "timber"
+        ? makeWood(museum.wall, { planks: 5, vertical: true, repeat: [6, 3] })
+        : museum.wallKind === "stone"
+          ? makeStone(museum.wall, [3, 2])
+          : museum.wallKind === "concrete"
+            ? makeConcrete(museum.wall, [2, 2])
+            : null;
+    return { floor, wall };
+  }, [museum, depth]);
+
+  useEffect(
+    () => () => {
+      textures.floor?.dispose();
+      textures.wall?.dispose();
+    },
+    [textures],
+  );
+  return textures;
+}
+
+function Ceiling({ museum, depth }: { museum: Museum; depth: number }) {
+  const { roomWidth: W, wallHeight: H, ceiling, ceilingKind } = museum;
   return (
     <group>
-      {/* reflective floor */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, H, 0]}>
+        <planeGeometry args={[W, depth]} />
+        <meshStandardMaterial color={ceiling} roughness={1} side={THREE.DoubleSide} />
+      </mesh>
+
+      {ceilingKind === "vault" && (
+        <group>
+          {/* glass-roof skylight ridge — a warm daylight strip down the nave */}
+          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, H - 0.02, 0]}>
+            <planeGeometry args={[W * 0.26, depth - 1]} />
+            <meshBasicMaterial color="#fff3da" toneMapped={false} />
+          </mesh>
+          {/* vault ribs across the nave */}
+          {Array.from({ length: Math.max(3, Math.round(depth / 3.5)) }).map(
+            (_, i, arr) => {
+              const z = -depth / 2 + (depth / (arr.length + 1)) * (i + 1);
+              return (
+                <mesh key={i} position={[0, H - 0.12, z]}>
+                  <boxGeometry args={[W, 0.22, 0.18]} />
+                  <meshStandardMaterial color="#b3a487" roughness={0.9} />
+                </mesh>
+              );
+            },
+          )}
+        </group>
+      )}
+
+      {ceilingKind === "clerestory" && (
+        <>
+          {[-1, 1].map((s) => (
+            <mesh
+              key={s}
+              position={[s * (W / 2 - 0.05), H - 0.5, 0]}
+              rotation={[0, -s * (Math.PI / 2), 0]}
+            >
+              <planeGeometry args={[depth - 1, 0.7]} />
+              <meshBasicMaterial color="#fbf4e6" toneMapped={false} />
+            </mesh>
+          ))}
+        </>
+      )}
+
+      {ceilingKind === "beam" &&
+        Array.from({ length: Math.max(3, Math.round(depth / 2.6)) }).map(
+          (_, i, arr) => {
+            const z = -depth / 2 + (depth / (arr.length + 1)) * (i + 1);
+            return (
+              <mesh key={i} position={[0, H - 0.14, z]}>
+                <boxGeometry args={[W, 0.2, 0.16]} />
+                <meshStandardMaterial color="#120e09" roughness={1} />
+              </mesh>
+            );
+          },
+        )}
+    </group>
+  );
+}
+
+function Room({ museum, depth }: { museum: Museum; depth: number }) {
+  const { roomWidth: W, wallHeight: H, wall, wallRoughness } = museum;
+  const { floor: floorTex, wall: wallTex } = useRoomTextures(museum, depth);
+
+  const wallMat = (
+    <meshStandardMaterial
+      color={wall}
+      map={wallTex ?? undefined}
+      roughness={wallRoughness}
+    />
+  );
+
+  return (
+    <group>
+      {/* floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[ROOM_WIDTH, depth]} />
-        <MeshReflectorMaterial
-          resolution={1024}
-          blur={[400, 120]}
-          mixBlur={1.1}
-          mixStrength={2.4}
-          mixContrast={1}
-          roughness={0.82}
-          depthScale={1.1}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.3}
-          color="#13110d"
-          metalness={0.55}
-        />
+        <planeGeometry args={[W, depth]} />
+        {museum.floor === "reflector" || museum.floor === "concrete" ? (
+          // a dark mirror floor — the map barely shows here, and dropping it
+          // keeps the sampler count safely under the GPU's texture-unit limit.
+          <MeshReflectorMaterial
+            resolution={1024}
+            blur={museum.floor === "concrete" ? [320, 110] : [400, 120]}
+            mixBlur={museum.floor === "concrete" ? 1.5 : 1.1}
+            mixStrength={museum.floor === "concrete" ? 1.5 : 2.4}
+            mixContrast={1}
+            roughness={museum.floor === "concrete" ? 0.5 : 0.82}
+            depthScale={1.1}
+            minDepthThreshold={0.4}
+            maxDepthThreshold={1.3}
+            color={museum.floorColor}
+            metalness={museum.floor === "concrete" ? 0.45 : 0.55}
+          />
+        ) : (
+          <meshStandardMaterial
+            map={floorTex ?? undefined}
+            color={museum.floorColor}
+            roughness={museum.floor === "parquet" ? 0.58 : 0.85}
+            metalness={museum.floor === "parquet" ? 0.12 : 0.05}
+          />
+        )}
       </mesh>
-      {/* ceiling */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_HEIGHT, 0]}>
-        <planeGeometry args={[ROOM_WIDTH, depth]} />
-        <meshStandardMaterial color="#0d0b09" roughness={1} />
-      </mesh>
+
+      <Ceiling museum={museum} depth={depth} />
+
       {/* left wall */}
       <mesh
-        {...wallProps}
-        position={[-ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0]}
+        receiveShadow
+        position={[-W / 2, H / 2, 0]}
         rotation={[0, Math.PI / 2, 0]}
       >
-        <planeGeometry args={[depth, WALL_HEIGHT]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.96} />
+        <planeGeometry args={[depth, H]} />
+        {wallMat}
       </mesh>
       {/* right wall */}
       <mesh
-        {...wallProps}
-        position={[ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0]}
+        receiveShadow
+        position={[W / 2, H / 2, 0]}
         rotation={[0, -Math.PI / 2, 0]}
       >
-        <planeGeometry args={[depth, WALL_HEIGHT]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.96} />
+        <planeGeometry args={[depth, H]} />
+        {wallMat}
       </mesh>
       {/* far wall */}
-      <mesh {...wallProps} position={[0, WALL_HEIGHT / 2, -depth / 2]}>
-        <planeGeometry args={[ROOM_WIDTH, WALL_HEIGHT]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.96} />
+      <mesh receiveShadow position={[0, H / 2, -depth / 2]}>
+        <planeGeometry args={[W, H]} />
+        {wallMat}
       </mesh>
       {/* near wall */}
-      <mesh
-        {...wallProps}
-        position={[0, WALL_HEIGHT / 2, depth / 2]}
-        rotation={[0, Math.PI, 0]}
-      >
-        <planeGeometry args={[ROOM_WIDTH, WALL_HEIGHT]} />
-        <meshStandardMaterial color={WALL_COLOR} roughness={0.96} />
+      <mesh receiveShadow position={[0, H / 2, depth / 2]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[W, H]} />
+        {wallMat}
       </mesh>
+
+      {/* baseboard for the lighter rooms grounds the walls */}
+      {(museum.wallKind === "stone" || museum.wallKind === "timber") && (
+        <>
+          {[-1, 1].map((s) => (
+            <mesh key={s} position={[s * (W / 2 - 0.02), 0.09, 0]}>
+              <boxGeometry args={[0.06, 0.18, depth]} />
+              <meshStandardMaterial color="#3a2f22" roughness={0.8} />
+            </mesh>
+          ))}
+        </>
+      )}
+
+      {/* Nezu: glowing washi screens on the far wall */}
+      {museum.shoji && (
+        <group position={[0, H * 0.5, -depth / 2 + 0.05]}>
+          {[-1, 0, 1].map((i) => (
+            <group key={i} position={[i * (W / 3.2), 0, 0]}>
+              <mesh>
+                <planeGeometry args={[W / 3.6, H * 0.74]} />
+                <meshBasicMaterial color="#f3e4c4" toneMapped={false} />
+              </mesh>
+              {/* lattice */}
+              {[-0.66, -0.33, 0, 0.33, 0.66].map((u) => (
+                <mesh key={u} position={[u * (W / 3.6), 0, 0.01]}>
+                  <boxGeometry args={[0.03, H * 0.74, 0.02]} />
+                  <meshBasicMaterial color="#2a2118" toneMapped={false} />
+                </mesh>
+              ))}
+              {[-0.4, -0.13, 0.13, 0.4].map((v) => (
+                <mesh key={v} position={[0, v * H * 0.74, 0.01]}>
+                  <boxGeometry args={[W / 3.6, 0.03, 0.02]} />
+                  <meshBasicMaterial color="#2a2118" toneMapped={false} />
+                </mesh>
+              ))}
+            </group>
+          ))}
+        </group>
+      )}
     </group>
   );
 }
 
 function Player({
   depth,
+  roomWidth,
   enabled,
   onStep,
   onDepth,
 }: {
   depth: number;
+  roomWidth: number;
   enabled: React.RefObject<boolean>;
   onStep?: () => void;
   onDepth?: (d: number) => void;
@@ -316,7 +630,7 @@ function Player({
         onStep?.();
       }
     }
-    const hx = ROOM_WIDTH / 2 - 0.7;
+    const hx = roomWidth / 2 - 0.7;
     const hz = depth / 2 - 0.7;
     camera.position.x = Math.max(-hx, Math.min(hx, camera.position.x));
     camera.position.z = Math.max(-hz, Math.min(hz, camera.position.z));
@@ -397,13 +711,16 @@ function Controls({
 const INTRO_READ = 1.7; // seconds dwelling on the placard
 const INTRO_TURN = 1.4; // seconds turning to face the gallery
 
-// During the entry, dim + turn the camera toward the left-wall placard, then
-// turn right to the gallery as the lights (tone-mapping exposure) come up.
+// The entry adapts to the museum: a dim placard read (default), a bright
+// daylight wash that the eye settles out of (Orsay/Chiba), spotlights punching
+// in from black (HongKun), or a slow warm paper-screen fade (Nezu).
 function IntroCamera({
+  museum,
   active,
   onTurning,
   onDone,
 }: {
+  museum: Museum;
   active: boolean;
   onTurning: () => void;
   onDone: () => void;
@@ -412,7 +729,15 @@ function IntroCamera({
   const start = useRef<number | null>(null);
   const turned = useRef(false);
   const done = useRef(false);
-  const lit = useRef(0.32);
+  const lit = useRef(
+    museum.intro === "spotlight"
+      ? 0
+      : museum.intro === "shoji"
+        ? 0.05
+        : museum.intro === "daylight"
+          ? 1
+          : 0.32,
+  );
 
   const setLights = (state: { scene: THREE.Scene }, factor: number) => {
     state.scene.traverse((o) => {
@@ -426,35 +751,74 @@ function IntroCamera({
 
   useFrame((state) => {
     if (!active || done.current) return;
+    const gl = state.gl as THREE.WebGLRenderer;
     if (start.current === null) {
       start.current = state.clock.elapsedTime;
-      camera.rotation.y = 0.06;
+      if (museum.intro === "placard") camera.rotation.y = 0.06;
+      else if (museum.intro === "daylight") {
+        camera.rotation.y = 0.1;
+        camera.rotation.x = 0.1;
+      } else camera.rotation.y = 0;
     }
     const e = state.clock.elapsedTime - start.current;
 
-    let targetYaw: number;
-    let targetLit: number;
-    if (e < INTRO_READ) {
-      targetYaw = 1.2; // turned left to face the description wall
-      targetLit = 0.32; // gallery dim while you read it
-    } else {
-      targetYaw = 0; // face down the gallery
-      targetLit = 1; // lights come up
+    const finish = () => {
+      done.current = true;
+      camera.rotation.y = 0;
+      camera.rotation.x = 0;
+      setLights(state, 1);
+      gl.toneMappingExposure = museum.exposure;
+      onDone();
+    };
+    const turn = () => {
       if (!turned.current) {
         turned.current = true;
         onTurning();
       }
-    }
+    };
 
-    camera.rotation.y += (targetYaw - camera.rotation.y) * 0.07;
-    lit.current += (targetLit - lit.current) * 0.05;
-    setLights(state, lit.current);
-
-    if (e > INTRO_READ + INTRO_TURN) {
-      done.current = true;
-      camera.rotation.y = 0;
-      setLights(state, 1);
-      onDone();
+    if (museum.intro === "daylight") {
+      turn();
+      camera.rotation.y += (0 - camera.rotation.y) * 0.05;
+      camera.rotation.x += (0 - camera.rotation.x) * 0.05;
+      lit.current += (1 - lit.current) * 0.05;
+      setLights(state, lit.current);
+      const k = Math.min(1, e / 1.8);
+      gl.toneMappingExposure = museum.exposure * (1.85 - 0.85 * k);
+      if (e > 2.0) finish();
+    } else if (museum.intro === "spotlight") {
+      if (e < 0.55) {
+        setLights(state, 0);
+      } else {
+        turn();
+        lit.current += (1 - lit.current) * 0.1;
+        setLights(state, lit.current);
+      }
+      if (e > 1.7) finish();
+    } else if (museum.intro === "shoji") {
+      if (e > 0.3) turn();
+      lit.current += (1 - lit.current) * 0.035;
+      setLights(state, lit.current);
+      camera.rotation.y += (0 - camera.rotation.y) * 0.04;
+      const k = Math.min(1, e / 2.2);
+      gl.toneMappingExposure = museum.exposure * (0.7 + 0.3 * k);
+      if (e > 2.4) finish();
+    } else {
+      // placard
+      let targetYaw: number;
+      let targetLit: number;
+      if (e < INTRO_READ) {
+        targetYaw = 1.2;
+        targetLit = 0.32;
+      } else {
+        targetYaw = 0;
+        targetLit = 1;
+        turn();
+      }
+      camera.rotation.y += (targetYaw - camera.rotation.y) * 0.07;
+      lit.current += (targetLit - lit.current) * 0.05;
+      setLights(state, lit.current);
+      if (e > INTRO_READ + INTRO_TURN) finish();
     }
   });
 
@@ -550,34 +914,41 @@ function wrapText(
   return lines;
 }
 
-function makeDescriptionTexture(d: {
-  name: string;
-  dates: string | null;
-  sub: string;
-  bio: string | null;
-  keyHeader: string;
-  keyDates: { year: number; label: string }[];
-  accent: string;
-}): THREE.CanvasTexture {
-  const W = 840;
-  const H = 1180;
+function makeDescriptionTexture(
+  d: {
+    name: string;
+    dates: string | null;
+    sub: string;
+    bio: string | null;
+    keyHeader: string;
+    keyDates: { year: number; label: string }[];
+    accent: string;
+  },
+  palette: DescPalette,
+  dim: { W: number; H: number } = { W: 840, H: 1180 },
+): THREE.CanvasTexture {
+  const W = dim.W;
+  const H = dim.H;
   const PAD = 64;
   const maxW = W - PAD * 2;
   const cv = document.createElement("canvas");
   cv.width = W;
   cv.height = H;
   const ctx = cv.getContext("2d")!;
+  const rule = palette.rule === "accent" ? d.accent : palette.ink;
 
-  ctx.fillStyle = "#19140d";
+  ctx.fillStyle = palette.panel;
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = d.accent;
   ctx.fillRect(0, 0, W, 9);
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = palette.faint;
+  ctx.globalAlpha = 0.3;
   ctx.lineWidth = 2;
   ctx.strokeRect(9, 9, W - 18, H - 18);
+  ctx.globalAlpha = 1;
 
   let y = 134;
-  ctx.fillStyle = "#efe7d7";
+  ctx.fillStyle = palette.ink;
   ctx.font = '600 64px "Cormorant Garamond", Georgia, serif';
   for (const ln of wrapText(ctx, d.name, maxW)) {
     ctx.fillText(ln, PAD, y);
@@ -592,7 +963,7 @@ function makeDescriptionTexture(d: {
     y += 46;
   }
   if (d.sub) {
-    ctx.fillStyle = "#a99f8d";
+    ctx.fillStyle = palette.sub;
     ctx.font = '20px "Inter", system-ui, sans-serif';
     ctx.letterSpacing = "3px";
     ctx.fillText(d.sub.toUpperCase(), PAD, y);
@@ -601,7 +972,7 @@ function makeDescriptionTexture(d: {
   }
 
   y += 16;
-  ctx.strokeStyle = d.accent;
+  ctx.strokeStyle = rule;
   ctx.globalAlpha = 0.6;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -612,7 +983,7 @@ function makeDescriptionTexture(d: {
   y += 44;
 
   if (d.bio) {
-    ctx.fillStyle = "#c4baa6";
+    ctx.fillStyle = palette.body;
     ctx.font = '27px "Inter", system-ui, sans-serif';
     for (const ln of wrapText(ctx, d.bio, maxW).slice(0, 11)) {
       ctx.fillText(ln, PAD, y);
@@ -634,10 +1005,10 @@ function makeDescriptionTexture(d: {
     ctx.beginPath();
     ctx.arc(PAD + 6, y - 9, 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#9a8f7b";
+    ctx.fillStyle = palette.faint;
     ctx.font = '600 25px "Cormorant Garamond", Georgia, serif';
     ctx.fillText(String(kd.year), PAD + 30, y);
-    ctx.fillStyle = "#d8cfbd";
+    ctx.fillStyle = palette.body;
     ctx.font = '25px "Inter", system-ui, sans-serif';
     let label = kd.label;
     while (ctx.measureText(label).width > maxW - 130 && label.length > 4) {
@@ -654,14 +1025,18 @@ function makeDescriptionTexture(d: {
   return tex;
 }
 
-// The artist description, painted full-height on the left wall at the entrance.
+// The artist description, presented to suit the museum: a full-height fresco on
+// the entrance wall (default/Orsay), a small framed wall label (Chiba/HongKun),
+// or a hanging scroll (Nezu).
 function DescriptionWall({
+  museum,
   artist,
   period,
   keyDates,
   accent,
   z,
 }: {
+  museum: Museum;
   artist: Artist;
   period: Period | null;
   keyDates: { year: number; label: string }[];
@@ -671,6 +1046,8 @@ function DescriptionWall({
   const t = useT();
   const { locale } = useLocale();
   const [tex, setTex] = useState<THREE.CanvasTexture | null>(null);
+  const mount = museum.descMount;
+  const dim = mount === "scroll" ? { W: 720, H: 1320 } : { W: 840, H: 1180 };
 
   useEffect(() => {
     let cancelled = false;
@@ -691,15 +1068,11 @@ function DescriptionWall({
       if (cancelled) return;
       setTex((old) => {
         old?.dispose();
-        return makeDescriptionTexture({
-          name,
-          dates,
-          sub,
-          bio,
-          keyHeader: t("keyDates"),
-          keyDates,
-          accent,
-        });
+        return makeDescriptionTexture(
+          { name, dates, sub, bio, keyHeader: t("keyDates"), keyDates, accent },
+          museum.desc,
+          dim,
+        );
       });
     };
     build();
@@ -710,16 +1083,59 @@ function DescriptionWall({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locale, artist, period, keyDates, accent]);
+  }, [locale, artist, period, keyDates, accent, museum]);
 
   if (!tex) return null;
-  const PH = WALL_HEIGHT - 0.5;
-  const PW = PH * (840 / 1180);
+  const W = museum.roomWidth;
+  const H = museum.wallHeight;
+  const x = -W / 2 + 0.06;
+  const ratio = dim.W / dim.H;
+
+  if (mount === "placard") {
+    const PH = 1.55;
+    const PW = PH * ratio;
+    return (
+      <group position={[x, EYE, z]} rotation={[0, Math.PI / 2, 0]}>
+        <mesh position={[0, 0, -0.01]}>
+          <planeGeometry args={[PW + 0.1, PH + 0.1]} />
+          <meshStandardMaterial color={museum.desc.faint} roughness={0.8} />
+        </mesh>
+        <mesh>
+          <planeGeometry args={[PW, PH]} />
+          <meshBasicMaterial map={tex} toneMapped={false} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (mount === "scroll") {
+    const PH = H - 1.1;
+    const PW = PH * ratio;
+    return (
+      <group position={[x, H * 0.52, z]} rotation={[0, Math.PI / 2, 0]}>
+        <mesh>
+          <planeGeometry args={[PW, PH]} />
+          <meshBasicMaterial map={tex} toneMapped={false} />
+        </mesh>
+        {[1, -1].map((s) => (
+          <mesh
+            key={s}
+            position={[0, (s * (PH + 0.16)) / 2, 0.02]}
+            rotation={[0, 0, Math.PI / 2]}
+          >
+            <cylinderGeometry args={[0.055, 0.055, PW + 0.34, 12]} />
+            <meshStandardMaterial color="#241a10" roughness={0.6} metalness={0.1} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  // wall: full-height fresco
+  const PH = H - 0.5;
+  const PW = PH * ratio;
   return (
-    <mesh
-      position={[-ROOM_WIDTH / 2 + 0.06, WALL_HEIGHT / 2, z]}
-      rotation={[0, Math.PI / 2, 0]}
-    >
+    <mesh position={[x, H / 2, z]} rotation={[0, Math.PI / 2, 0]}>
       <planeGeometry args={[PW, PH]} />
       <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>
@@ -727,18 +1143,28 @@ function DescriptionWall({
 }
 
 export default function Gallery({
+  museum,
   artist,
   period,
   paintings,
   intro = false,
 }: {
+  museum: Museum;
   artist: Artist;
   period: Period | null;
   paintings: Painting[];
   intro?: boolean;
 }) {
-  const { hangs, depth, descZ } = useHangs(paintings);
-  const accent = period?.color ?? "#c9a24b";
+  const descReserve = museum.descMount === "wall" ? 3.6 : 1.9;
+  const { hangs, depth, descZ } = useHangs(
+    paintings,
+    museum.roomWidth,
+    descReserve,
+  );
+  const accent = museum.accentFromPeriod
+    ? (period?.color ?? museum.signature)
+    : museum.signature;
+  const periodNameStr = period?.name ?? null;
   const t = useT();
   const { locale } = useLocale();
   const { setScene: setAudioScene, setGalleryDepth, step } = useAudio();
@@ -791,39 +1217,55 @@ export default function Gallery({
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#0b0a08]">
+    <div
+      className="relative h-screen w-screen overflow-hidden"
+      style={{ background: museum.bg }}
+    >
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ fov: 62, near: 0.1, far: 80, position: [0, EYE, depth / 2 - 1.6] }}
+        camera={{ fov: 62, near: 0.1, far: 90, position: [0, EYE, depth / 2 - 1.6] }}
         gl={{ antialias: true }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.12;
+          gl.toneMappingExposure = museum.exposure;
         }}
       >
-        <color attach="background" args={["#0b0a08"]} />
-        <fog attach="fog" args={["#0b0a08", 9, 42]} />
+        <color attach="background" args={[museum.bg]} />
+        <fog attach="fog" args={[museum.fogColor, museum.fogNear, museum.fogFar]} />
 
-        <ambientLight intensity={0.32} />
-        <hemisphereLight args={["#4a4230", "#0a0908", 0.42]} />
+        <ambientLight intensity={museum.ambient} />
+        <hemisphereLight
+          args={[museum.hemiSky, museum.hemiGround, museum.hemiIntensity]}
+        />
+        {museum.daylight && (
+          <directionalLight
+            position={museum.daylight.pos}
+            intensity={museum.daylight.intensity}
+            color={museum.daylight.color}
+            castShadow
+            shadow-mapSize={[2048, 2048]}
+            shadow-bias={-0.0004}
+          />
+        )}
         {Array.from({ length: Math.max(2, Math.round(depth / 6)) }).map(
           (_, i, arr) => {
             const z = -depth / 2 + (depth / (arr.length + 1)) * (i + 1);
             return (
               <pointLight
                 key={`ceil-${i}`}
-                position={[0, WALL_HEIGHT - 0.4, z]}
-                intensity={7}
-                distance={15}
+                position={[0, museum.wallHeight - 0.4, z]}
+                intensity={museum.ceilLightIntensity}
+                distance={16}
                 decay={2}
-                color="#ffe7c2"
+                color={museum.ceilLightColor}
               />
             );
           },
         )}
-        <Room depth={depth} />
+        <Room museum={museum} depth={depth} />
         <DescriptionWall
+          museum={museum}
           artist={artist}
           period={period}
           keyDates={keyDates}
@@ -836,13 +1278,19 @@ export default function Gallery({
             fallback={<FallbackFrame hang={hang} accent={accent} />}
           >
             <Suspense fallback={null}>
-              <PaintingFrame hang={hang} accent={accent} onInspect={onInspect} />
+              <PaintingFrame
+                hang={hang}
+                prof={frameProfile(museum, periodNameStr, hang.p.year, accent)}
+                light={museum.pictureLight}
+                onInspect={onInspect}
+              />
             </Suspense>
           </TexBoundary>
         ))}
 
         <Player
           depth={depth}
+          roomWidth={museum.roomWidth}
           enabled={moving}
           onStep={step}
           onDepth={setGalleryDepth}
@@ -850,6 +1298,7 @@ export default function Gallery({
         <Controls didDrag={didDrag} enabled={looking} />
         {intro && (
           <IntroCamera
+            museum={museum}
             active={phase < 2}
             onTurning={() => setPhase(1)}
             onDone={() => setPhase(2)}
@@ -865,12 +1314,12 @@ export default function Gallery({
             focalLength={0.02}
           />
           <Bloom
-            intensity={0.5}
-            luminanceThreshold={0.62}
+            intensity={museum.bloom}
+            luminanceThreshold={museum.bloomThreshold}
             luminanceSmoothing={0.25}
             mipmapBlur
           />
-          <Vignette eskil={false} offset={0.2} darkness={0.72} />
+          <Vignette eskil={false} offset={0.2} darkness={museum.vignette} />
         </EffectComposer>
       </Canvas>
 
@@ -896,6 +1345,12 @@ export default function Gallery({
               {periodName(locale, period.name)}
             </div>
           )}
+          <div
+            className="mt-0.5 text-[10px] uppercase tracking-[0.22em]"
+            style={{ color: museum.signature }}
+          >
+            {museum.name}
+          </div>
         </div>
       </div>
 

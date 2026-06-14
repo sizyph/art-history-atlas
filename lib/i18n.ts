@@ -18,6 +18,8 @@ const en: Dict = {
   searchArtists: "Search artists…",
   noMatches: "No matches",
   enterMuseum: "Enter the museum",
+  chooseMuseum: "Choose a museum",
+  enter: "Enter",
   works: "{n} works",
   biographyUnavailable: "Biography unavailable.",
   galleryUnavailable:
@@ -45,6 +47,8 @@ const fr: Dict = {
   searchArtists: "Rechercher un artiste…",
   noMatches: "Aucun résultat",
   enterMuseum: "Entrer dans le musée",
+  chooseMuseum: "Choisir un musée",
+  enter: "Entrer",
   works: "{n} œuvres",
   biographyUnavailable: "Biographie indisponible.",
   galleryUnavailable:
@@ -72,6 +76,8 @@ const ja: Dict = {
   searchArtists: "画家を検索…",
   noMatches: "該当なし",
   enterMuseum: "美術館に入る",
+  chooseMuseum: "美術館を選ぶ",
+  enter: "入る",
   works: "{n}点の作品",
   biographyUnavailable: "略歴はありません。",
   galleryUnavailable:

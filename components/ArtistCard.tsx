@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { StarArtist } from "@/lib/timeline";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized, periodName } from "@/lib/i18n";
+import { MUSEUMS, getMuseum } from "@/lib/museums";
 
 export default function ArtistCard({
   artist,
@@ -15,14 +16,17 @@ export default function ArtistCard({
 }) {
   const [shown, setShown] = useState(false);
   const [entering, setEntering] = useState(false);
+  const [museumId, setMuseumId] = useState("default");
   const router = useRouter();
   const t = useT();
   const { locale } = useLocale();
+  const selMuseum = getMuseum(museumId);
+  const enterColor = selMuseum.signature;
 
   const startEnter = () => {
     setEntering(true);
     window.setTimeout(
-      () => router.push(`/museum/${artist.slug}?intro=1`),
+      () => router.push(`/museum/${artist.slug}?intro=1&museum=${museumId}`),
       760,
     );
   };
@@ -158,40 +162,77 @@ export default function ArtistCard({
           </p>
         </div>
 
-        <div className="flex items-end justify-between gap-4 p-6 pt-5">
+        <div className="p-6 pt-5">
           {canEnter ? (
-            <button
-              onClick={startEnter}
-              className="group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-transform hover:scale-[1.02]"
-              style={{ background: artist.periodColor, color: "#15120E" }}
-            >
-              {t("enterMuseum")}
-              <span className="transition-transform group-hover:translate-x-0.5">
-                →
-              </span>
-            </button>
-          ) : (
-            <span className="max-w-[60%] text-[12px] leading-snug text-ink-faint">
-              {t("galleryUnavailable")}
-            </span>
-          )}
-          <div className="shrink-0 text-right text-[11px] text-ink-faint">
-            {artist.paintingCount > 0 && (
-              <div className="mb-0.5">
-                {t("works", { n: artist.paintingCount })}
+            <>
+              <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+                {t("chooseMuseum")}
               </div>
-            )}
-            {artist.wikipediaUrl && (
-              <a
-                href={artist.wikipediaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-2 hover:text-ink-soft"
-              >
-                {t("wikipedia")}
-              </a>
-            )}
-          </div>
+              <div className="flex items-stretch gap-2">
+                <div className="relative flex-1">
+                  <select
+                    value={museumId}
+                    onChange={(e) => setMuseumId(e.target.value)}
+                    className="w-full appearance-none rounded-full border border-line bg-[#221D16] py-2.5 pl-4 pr-9 text-sm text-ink outline-none transition-colors hover:border-white/25 focus:border-white/35"
+                    style={{ colorScheme: "dark" }}
+                  >
+                    {MUSEUMS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] text-ink-faint">
+                    ▾
+                  </span>
+                </div>
+                <button
+                  onClick={startEnter}
+                  className="group inline-flex shrink-0 items-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-medium transition-transform hover:scale-[1.03]"
+                  style={{ background: enterColor, color: "#15120E" }}
+                >
+                  {t("enter")}
+                  <span className="transition-transform group-hover:translate-x-0.5">
+                    →
+                  </span>
+                </button>
+              </div>
+              <p className="mt-2.5 text-[11px] leading-snug text-ink-faint">
+                {selMuseum.blurb[locale]}
+              </p>
+              <div className="mt-3 flex items-center justify-between text-[11px] text-ink-faint">
+                <span>
+                  {artist.paintingCount > 0 && t("works", { n: artist.paintingCount })}
+                </span>
+                {artist.wikipediaUrl && (
+                  <a
+                    href={artist.wikipediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 hover:text-ink-soft"
+                  >
+                    {t("wikipedia")}
+                  </a>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-end justify-between gap-4">
+              <span className="max-w-[60%] text-[12px] leading-snug text-ink-faint">
+                {t("galleryUnavailable")}
+              </span>
+              {artist.wikipediaUrl && (
+                <a
+                  href={artist.wikipediaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-[11px] text-ink-faint underline underline-offset-2 hover:text-ink-soft"
+                >
+                  {t("wikipedia")}
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -200,7 +241,7 @@ export default function ArtistCard({
           <div
             className="absolute inset-0"
             style={{
-              background: `radial-gradient(circle at 28% 46%, ${artist.periodColor}, #2a190d 32%, #140c06 72%)`,
+              background: `radial-gradient(circle at 28% 46%, ${enterColor}, #2a190d 32%, #140c06 72%)`,
               animation: "waterFill 0.82s cubic-bezier(0.5,0,0.7,1) forwards",
             }}
           />
