@@ -75,8 +75,9 @@ function useHangs(
 
     // right wall: centred along the full wall
     const rz = zPositions(right.length);
-    // left wall: paintings begin behind the description and run to the back
-    const leftTop = descZ - DESC / 2 - 1.0;
+    // left wall: paintings begin a clear gap behind the description (so the bio
+    // reads as a standalone introduction) and run to the back
+    const leftTop = descZ - DESC / 2 - 1.8;
     const leftBottom = -front + 2;
     const lz =
       left.length <= 1
@@ -896,16 +897,24 @@ function Controls({
   return null;
 }
 
-// The entry adapts to the museum: a dim placard read (default), a bright
-// daylight wash that the eye settles out of (Orsay/Chiba), spotlights punching
-// in from black (HongKun), or a slow warm paper-screen fade (Nezu).
+type CamKey = { p: [number, number, number]; yaw: number; fov: number };
+
+// The entry is one continuous move: you begin framed on the artist's wall
+// presentation (the card, become a fresco), the room fades up *around* it, the
+// camera steps back to take in the panel and the first painting, then turns to
+// reveal the whole hall. Each museum layers its own light on top — a dim read,
+// a bright daylight wash, or a slow warm paper-screen fade.
 function IntroCamera({
   museum,
+  depth,
+  descZ,
   active,
   onTurning,
   onDone,
 }: {
   museum: Museum;
+  depth: number;
+  descZ: number;
   active: boolean;
   onTurning: () => void;
   onDone: () => void;
@@ -914,6 +923,16 @@ function IntroCamera({
   const start = useRef<number | null>(null);
   const turned = useRef(false);
   const done = useRef(false);
+
+  const keys = useMemo(() => {
+    const W = museum.roomWidth;
+    const clampX = (x: number) =>
+      Math.max(-(W / 2 - 0.7), Math.min(W / 2 - 0.7, x));
+    const K0: CamKey = { p: [clampX(-W / 2 + 2.8), EYE, descZ], yaw: Math.PI / 2, fov: 46 };
+    const K1: CamKey = { p: [clampX(-W / 2 + 5.0), EYE, descZ - 0.9], yaw: 1.0, fov: 56 };
+    const K2: CamKey = { p: [0, EYE, depth / 2 - 1.6], yaw: 0, fov: 62 };
+    return { K0, K1, K2 };
+  }, [museum.roomWidth, depth, descZ]);
 
   const setLights = (state: { scene: THREE.Scene }, factor: number) => {
     state.scene.traverse((o) => {
@@ -925,11 +944,15 @@ function IntroCamera({
     });
   };
 
-  // smoothstep — gives an eased, buttery in/out instead of a per-frame lerp
   const ease = (x: number) => {
     const c = Math.max(0, Math.min(1, x));
     return c * c * (3 - 2 * c);
   };
+
+  const A = 0.9; // hold framed on the presentation
+  const B = 1.5; // step back to reveal panel + first painting
+  const C = 1.5; // turn to the full gallery
+  const TOTAL = A + B + C;
 
   useFrame((state) => {
     if (!active || done.current) return;
@@ -937,77 +960,53 @@ function IntroCamera({
     const cam = camera as THREE.PerspectiveCamera;
     if (start.current === null) {
       start.current = state.clock.elapsedTime;
-      if (museum.intro === "placard") {
-        camera.rotation.y = 1.12;
-        cam.fov = 40;
-        cam.updateProjectionMatrix();
-      } else if (museum.intro === "daylight") {
-        camera.rotation.y = 0.14;
-        camera.rotation.x = 0.08;
-      } else camera.rotation.y = 0;
+      camera.rotation.order = "YXZ";
     }
     const e = state.clock.elapsedTime - start.current;
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const place = (a: CamKey, b: CamKey, t: number) => {
+      cam.position.set(lerp(a.p[0], b.p[0], t), EYE, lerp(a.p[2], b.p[2], t));
+      camera.rotation.y = lerp(a.yaw, b.yaw, t);
+      camera.rotation.x = 0;
+      const fov = lerp(a.fov, b.fov, t);
+      if (Math.abs(cam.fov - fov) > 0.01) {
+        cam.fov = fov;
+        cam.updateProjectionMatrix();
+      }
+    };
+
+    // lighting + exposure, smoothly over the whole move
+    const litStart =
+      museum.intro === "shoji" ? 0.06 : museum.intro === "daylight" ? 1 : 0.36;
+    setLights(state, litStart + (1 - litStart) * ease(e / TOTAL));
+    if (museum.intro === "daylight") {
+      gl.toneMappingExposure =
+        museum.exposure * (1.7 - 0.7 * ease(e / (TOTAL * 0.7)));
+    } else if (museum.intro === "shoji") {
+      gl.toneMappingExposure = museum.exposure * (0.72 + 0.28 * ease(e / TOTAL));
+    }
 
     const finish = () => {
       done.current = true;
-      camera.rotation.y = 0;
-      camera.rotation.x = 0;
-      if (cam.fov !== 62) {
-        cam.fov = 62;
-        cam.updateProjectionMatrix();
-      }
+      place(keys.K2, keys.K2, 0);
       setLights(state, 1);
       gl.toneMappingExposure = museum.exposure;
       onDone();
     };
-    const turn = () => {
+
+    if (e < A) {
+      place(keys.K0, keys.K0, 0);
+    } else if (e < A + B) {
+      place(keys.K0, keys.K1, ease((e - A) / B));
+    } else if (e < TOTAL) {
       if (!turned.current) {
         turned.current = true;
         onTurning();
       }
-    };
-
-    if (museum.intro === "daylight") {
-      turn();
-      const k = ease(e / 2.0);
-      camera.rotation.y = 0.14 * (1 - k);
-      camera.rotation.x = 0.08 * (1 - k);
-      setLights(state, 1);
-      gl.toneMappingExposure = museum.exposure * (1.7 - 0.7 * k);
-      if (e > 2.1) finish();
-    } else if (museum.intro === "spotlight") {
-      if (e < 0.5) {
-        setLights(state, 0);
-      } else {
-        turn();
-        setLights(state, ease((e - 0.5) / 1.1));
-      }
-      if (e > 1.7) finish();
-    } else if (museum.intro === "shoji") {
-      if (e > 0.3) turn();
-      const k = ease(e / 2.3);
-      setLights(state, 0.05 + 0.95 * k);
-      gl.toneMappingExposure = museum.exposure * (0.72 + 0.28 * k);
-      if (e > 2.5) finish();
+      place(keys.K1, keys.K2, ease((e - A - B) / C));
     } else {
-      // placard: dwell on the description (zoomed in), then widen the field of
-      // view and turn so the gallery opens up *around* it.
-      const READ = 1.1;
-      const OPEN = 2.1;
-      if (e < READ) {
-        camera.rotation.y = 1.12;
-        cam.fov = 40;
-        cam.updateProjectionMatrix();
-        setLights(state, 0.36);
-      } else {
-        turn();
-        const k = ease((e - READ) / OPEN);
-        camera.rotation.y = 1.12 * (1 - k);
-        cam.fov = 40 + 22 * k;
-        cam.updateProjectionMatrix();
-        setLights(state, 0.36 + 0.64 * k);
-        if (e > READ + OPEN) finish();
-      }
+      finish();
     }
   });
 
@@ -1513,6 +1512,8 @@ export default function Gallery({
         {intro && (
           <IntroCamera
             museum={museum}
+            depth={depth}
+            descZ={descZ}
             active={phase < 2}
             onTurning={() => setPhase(1)}
             onDone={() => setPhase(2)}
@@ -1547,7 +1548,7 @@ export default function Gallery({
       {/* top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-6">
         <Link
-          href="/"
+          href={`/?focus=${artist.slug}`}
           className="pointer-events-auto rounded-full border border-white/15 bg-black/30 px-4 py-2 text-[12px] text-ink backdrop-blur transition-colors hover:bg-black/50"
         >
           ← Constellation

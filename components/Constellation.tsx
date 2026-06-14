@@ -292,12 +292,19 @@ function wavyPath(ax: number, ay: number, bx: number, by: number): string {
   return d;
 }
 
-export default function Constellation({ layout }: { layout: Layout }) {
+export default function Constellation({
+  layout,
+  focusSlug,
+}: {
+  layout: Layout;
+  focusSlug?: string;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
   const didDrag = useRef(false);
   const interacted = useRef(false);
   const flyTimer = useRef<number | undefined>(undefined);
+  const clickTimer = useRef<number | undefined>(undefined);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 0.25 });
   const [ready, setReady] = useState(false);
   const [flying, setFlying] = useState(false);
@@ -376,6 +383,21 @@ export default function Constellation({ layout }: { layout: Layout }) {
       if (!w || !h) return;
       setReady(true);
       if (interacted.current) return;
+      // returning from a gallery → start framed on the artist just visited
+      if (focusSlug) {
+        for (const g of layout.galaxies) {
+          const a = g.artists.find((x) => x.slug === focusSlug);
+          if (a) {
+            interacted.current = true;
+            setHighlight([g.slug]);
+            const s = 1.55;
+            setView(
+              clampView({ scale: s, x: w / 2 - a.x * s, y: h / 2 - a.y * s }),
+            );
+            return;
+          }
+        }
+      }
       const scale = Math.min(
         (w * 0.92) / layout.width,
         (h * 0.86) / layout.height,
@@ -514,6 +536,32 @@ export default function Constellation({ layout }: { layout: Layout }) {
     drag.current = null;
   };
 
+  // Double-click to zoom toward the cursor; hold Shift/Alt to zoom back out.
+  const stepZoom = (clientX: number, clientY: number, factor: number) => {
+    const el = wrapRef.current;
+    if (!el) return;
+    interacted.current = true;
+    setFlying(true);
+    const rect = el.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+    setView((v) => {
+      const ns = Math.min(Math.max(v.scale * factor, 0.14), 4);
+      const wx = (cx - v.x) / v.scale;
+      const wy = (cy - v.y) / v.scale;
+      return clampView({ scale: ns, x: cx - wx * ns, y: cy - wy * ns });
+    });
+    window.clearTimeout(flyTimer.current);
+    flyTimer.current = window.setTimeout(() => setFlying(false), 520);
+  };
+  const onDoubleClick = (e: React.MouseEvent) => {
+    window.clearTimeout(clickTimer.current); // cancel the pending overview
+    if ((e.target as HTMLElement).closest("button")) return; // a star/galaxy
+    stepZoom(e.clientX, e.clientY, e.shiftKey || e.altKey ? 1 / 1.9 : 1.9);
+  };
+
+  useEffect(() => () => window.clearTimeout(clickTimer.current), []);
+
   const inv = 1 / view.scale;
   const starsOn = Math.min(Math.max((view.scale - 0.5) / 0.55, 0), 1);
   const labelsOn = Math.min(Math.max((view.scale - 1.0) / 0.45, 0), 1);
@@ -526,8 +574,12 @@ export default function Constellation({ layout }: { layout: Layout }) {
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onClick={() => {
-        if (!didDrag.current) flyToOverview();
+        if (didDrag.current) return;
+        // wait briefly so a double-click (zoom) doesn't also reset to overview
+        window.clearTimeout(clickTimer.current);
+        clickTimer.current = window.setTimeout(() => flyToOverview(), 260);
       }}
+      onDoubleClick={onDoubleClick}
       className="relative h-screen w-screen cursor-grab touch-none select-none overflow-hidden bg-bg active:cursor-grabbing"
     >
       <Starfield view={view} flying={flying} />
