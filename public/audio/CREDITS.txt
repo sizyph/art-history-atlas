@@ -1,0 +1,13 @@
+Audio credits
+=============
+
+crowd.mp3
+  Source: "1 minute at the Alexa mall in Berlin"
+  via Wikimedia Commons — https://commons.wikimedia.org/wiki/File:1_minute_at_the_alexa_mall_in_berlin.ogg
+  Licence: Public domain (no attribution required)
+  Processing: trimmed to a 24s loop, downmixed to mono, loudness-normalised,
+  fades added for seamless looping (ffmpeg).
+
+Everything else in the soundscape (the cosmic pad, room-tone, footsteps,
+binaural tone, and the per-artwork nature sounds — surf, wind, birds, rain,
+fire) is synthesised in-browser with the Web Audio API; no other sample files.

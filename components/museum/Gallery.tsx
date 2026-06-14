@@ -26,6 +26,7 @@ import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
+import { classifySubject } from "@/lib/audio";
 import { localized, periodName } from "@/lib/i18n";
 import {
   frameProfile,
@@ -737,13 +738,11 @@ function Player({
   roomWidth,
   enabled,
   onStep,
-  onDepth,
 }: {
   depth: number;
   roomWidth: number;
   enabled: React.RefObject<boolean>;
   onStep?: () => void;
-  onDepth?: (d: number) => void;
 }) {
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({});
@@ -779,7 +778,6 @@ function Player({
   const side = useRef(new THREE.Vector3());
   const dir = useRef(new THREE.Vector3());
   const stepAccum = useRef(0);
-  const depthT = useRef(0);
 
   useFrame((_, dt) => {
     if (!enabled.current) return;
@@ -808,16 +806,33 @@ function Player({
     camera.position.x = Math.max(-hx, Math.min(hx, camera.position.x));
     camera.position.z = Math.max(-hz, Math.min(hz, camera.position.z));
     camera.position.y = EYE;
-
-    depthT.current += dt;
-    if (depthT.current > 0.3) {
-      depthT.current = 0;
-      onDepth?.(
-        Math.max(0, Math.min(1, (depth / 2 - camera.position.z) / depth)),
-      );
-    }
   });
 
+  return null;
+}
+
+// Feeds the soundscape where you're looking and how deep you stand — always on
+// (including during the entry), so the entrance crowd muffles as you turn in.
+function Spatial({
+  depth,
+  onFacing,
+  onDepth,
+}: {
+  depth: number;
+  onFacing: (f: number) => void;
+  onDepth: (d: number) => void;
+}) {
+  const { camera } = useThree();
+  const fwd = useRef(new THREE.Vector3());
+  const acc = useRef(0);
+  useFrame((_, dt) => {
+    acc.current += dt;
+    if (acc.current < 0.15) return;
+    acc.current = 0;
+    camera.getWorldDirection(fwd.current);
+    onFacing(Math.max(0, Math.min(1, (-fwd.current.z + 1) / 2)));
+    onDepth(Math.max(0, Math.min(1, (depth / 2 - camera.position.z) / depth)));
+  });
   return null;
 }
 
@@ -1341,7 +1356,8 @@ export default function Gallery({
   const periodNameStr = period?.name ?? null;
   const t = useT();
   const { locale } = useLocale();
-  const { setScene: setAudioScene, setGalleryDepth, step } = useAudio();
+  const { setScene: setAudioScene, setFacing, setDepth, step, setArtwork } =
+    useAudio();
   useEffect(() => {
     setAudioScene("gallery");
     return () => setAudioScene("off");
@@ -1360,6 +1376,19 @@ export default function Gallery({
     moving.current = phase === 2 && !inspect;
     looking.current = phase === 2;
   }, [phase, inspect]);
+
+  // standing before a single work → the art view (binaural tone) and that
+  // painting's own soundscape; back to the room when you leave it.
+  useEffect(() => {
+    const p = inspect ?? fullscreen;
+    if (p) {
+      setAudioScene("artview");
+      setArtwork(classifySubject(`${p.title} ${p.story ?? ""}`));
+    } else {
+      setAudioScene("gallery");
+      setArtwork(null);
+    }
+  }, [inspect, fullscreen, setAudioScene, setArtwork]);
 
   const keyDates = useMemo(() => {
     const works = paintings
@@ -1478,8 +1507,8 @@ export default function Gallery({
           roomWidth={museum.roomWidth}
           enabled={moving}
           onStep={step}
-          onDepth={setGalleryDepth}
         />
+        <Spatial depth={depth} onFacing={setFacing} onDepth={setDepth} />
         <Controls didDrag={didDrag} enabled={looking} />
         {intro && (
           <IntroCamera

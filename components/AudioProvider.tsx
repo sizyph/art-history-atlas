@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AudioEngine, type Scene } from "@/lib/audio";
+import { AudioEngine, type ArtSubject, type Scene } from "@/lib/audio";
 
 type AudioCtx = {
   ready: boolean;
@@ -18,8 +18,10 @@ type AudioCtx = {
   setMuted: (m: boolean) => void;
   setVolume: (v: number) => void;
   setScene: (s: Scene) => void;
-  setGalleryDepth: (d: number) => void;
+  setFacing: (f: number) => void;
+  setDepth: (d: number) => void;
   step: () => void;
+  setArtwork: (s: ArtSubject | null) => void;
 };
 
 const Ctx = createContext<AudioCtx>({
@@ -29,8 +31,10 @@ const Ctx = createContext<AudioCtx>({
   setMuted: () => {},
   setVolume: () => {},
   setScene: () => {},
-  setGalleryDepth: () => {},
+  setFacing: () => {},
+  setDepth: () => {},
   step: () => {},
+  setArtwork: () => {},
 });
 
 export function AudioProvider({ children }: { children: ReactNode }) {
@@ -90,12 +94,20 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setScene(s);
   }, []);
 
-  const setGalleryDepth = useCallback((d: number) => {
-    engineRef.current?.setGalleryDepth(d);
+  const setFacing = useCallback((f: number) => {
+    engineRef.current?.setFacing(f);
+  }, []);
+
+  const setDepth = useCallback((d: number) => {
+    engineRef.current?.setDepth(d);
   }, []);
 
   const step = useCallback(() => {
     engineRef.current?.step();
+  }, []);
+
+  const setArtwork = useCallback((s: ArtSubject | null) => {
+    engineRef.current?.setArtwork(s);
   }, []);
 
   return (
@@ -107,8 +119,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         setMuted,
         setVolume,
         setScene,
-        setGalleryDepth,
+        setFacing,
+        setDepth,
         step,
+        setArtwork,
       }}
     >
       {children}
