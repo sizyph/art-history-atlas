@@ -269,25 +269,102 @@ function Moulding({
   );
 }
 
+// A museum wall label: a small off-white plate with the painting's name in
+// clear black, and the year beneath. Drawn unlit so it stays legible in every
+// room's light.
+function makeLabelTexture(title: string, year: number | null): THREE.CanvasTexture {
+  const W = 512;
+  const H = 170;
+  const PAD = 26;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext("2d")!;
+  ctx.fillStyle = "#f3f2ec";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "rgba(0,0,0,0.14)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+
+  // title — shrink the type until it fits two lines, ellipsise if it still won't
+  let fs = 42;
+  let lines: string[] = [];
+  for (; fs >= 24; fs -= 2) {
+    ctx.font = `600 ${fs}px "Cormorant Garamond", Georgia, serif`;
+    lines = wrapText(ctx, title, W - PAD * 2);
+    if (lines.length <= 2) break;
+  }
+  if (lines.length > 2) {
+    lines = lines.slice(0, 2);
+    let last = lines[1];
+    while (ctx.measureText(`${last}…`).width > W - PAD * 2 && last.length > 1) {
+      last = last.slice(0, -1);
+    }
+    lines[1] = `${last.trimEnd()}…`;
+  }
+  ctx.fillStyle = "#161616";
+  ctx.textBaseline = "alphabetic";
+  let y = lines.length === 2 ? 52 : 70;
+  for (const ln of lines) {
+    ctx.fillText(ln, PAD, y);
+    y += fs + 6;
+  }
+
+  if (year != null) {
+    ctx.fillStyle = "#6b6b64";
+    ctx.font = '400 27px "Inter", system-ui, sans-serif';
+    ctx.fillText(String(year), PAD, H - 26);
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function PaintingFrame({
   hang,
   prof,
   light,
+  label,
+  year,
   onInspect,
 }: {
   hang: Hang;
   prof: FrameProfile;
   light: Museum["pictureLight"];
+  label: string;
+  year: number | null;
   onInspect: (p: Painting) => void;
 }) {
   const tex = useTexture(wallTextureUrl(hang.p));
   const lightRef = useRef<THREE.SpotLight>(null);
   const targetRef = useRef<THREE.Object3D>(null);
+  const [labelTex, setLabelTex] = useState<THREE.CanvasTexture | null>(null);
 
   useEffect(() => {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;
   }, [tex]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const build = () => {
+      if (cancelled) return;
+      setLabelTex((old) => {
+        old?.dispose();
+        return makeLabelTexture(label, year);
+      });
+    };
+    build();
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(build);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [label, year]);
 
   useEffect(() => {
     if (lightRef.current && targetRef.current) {
@@ -331,6 +408,20 @@ function PaintingFrame({
         <planeGeometry args={[w, h]} />
         <meshStandardMaterial map={tex} roughness={0.62} metalness={0} />
       </mesh>
+      {/* name plate — to the right, its bottom aligned with the painting's */}
+      {labelTex &&
+        (() => {
+          const plateW = 0.5;
+          const plateH = (plateW * 170) / 512;
+          const x = w / 2 + prof.mat + prof.border + 0.1 + plateW / 2;
+          const y = -h / 2 + plateH / 2;
+          return (
+            <mesh position={[x, y, 0.02]}>
+              <planeGeometry args={[plateW, plateH]} />
+              <meshBasicMaterial map={labelTex} toneMapped={false} />
+            </mesh>
+          );
+        })()}
       {/* picture light */}
       {light.show && (
         <>
@@ -1495,6 +1586,11 @@ export default function Gallery({
                 hang={hang}
                 prof={frameProfile(museum, periodNameStr, hang.p.year, accent)}
                 light={museum.pictureLight}
+                label={
+                  localized(locale, hang.p.i18n, "title", hang.p.title) ??
+                  hang.p.title
+                }
+                year={hang.p.year}
                 onInspect={onInspect}
               />
             </Suspense>
