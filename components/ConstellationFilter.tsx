@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import type { Galaxy, StarArtist } from "@/lib/timeline";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { periodName } from "@/lib/i18n";
+import { localized, periodName } from "@/lib/i18n";
 
 type Props = {
   galaxies: Galaxy[];
@@ -49,7 +49,13 @@ export default function ConstellationFilter({
   const periods = galaxies.filter((g) => !ql || g.name.toLowerCase().includes(ql));
   const artists = galaxies
     .flatMap((g) => g.artists.map((a) => ({ g, a })))
-    .filter(({ a }) => !ql || a.name.toLowerCase().includes(ql));
+    .filter(({ a }) => {
+      if (!ql) return true;
+      const ln = localized(locale, a.i18n, "name", a.name) ?? a.name;
+      return (
+        a.name.toLowerCase().includes(ql) || ln.toLowerCase().includes(ql)
+      );
+    });
   const empty = (tab === "movements" ? periods.length : artists.length) === 0;
 
   return (
@@ -140,7 +146,9 @@ export default function ConstellationFilter({
                       className="h-2 w-2 shrink-0 rounded-full"
                       style={{ background: g.color }}
                     />
-                    <span className="flex-1 text-[13px] text-ink">{a.name}</span>
+                    <span className="flex-1 text-[13px] text-ink">
+                      {localized(locale, a.i18n, "name", a.name)}
+                    </span>
                     <span className="text-[11px] text-ink-faint">
                       {periodName(locale, g.name)}
                     </span>

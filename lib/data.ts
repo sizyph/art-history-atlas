@@ -19,6 +19,7 @@ export async function getConstellationData(): Promise<LayoutInput> {
       portraitUrl: artists.portraitUrl,
       wikipediaUrl: artists.wikipediaUrl,
       orderIndex: artists.orderIndex,
+      i18n: artists.i18n,
       paintingCount: count(paintings.id),
     })
     .from(artists)

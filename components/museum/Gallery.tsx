@@ -18,7 +18,7 @@ import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { periodName } from "@/lib/i18n";
+import { localized, periodName } from "@/lib/i18n";
 
 const WALL_COLOR = "#1b1712";
 const SPACING = 3.6;
@@ -464,7 +464,9 @@ export default function Gallery({
         </Link>
         <LangSwitcher />
         <div className="text-right">
-          <div className="font-display text-lg text-ink">{artist.name}</div>
+          <div className="font-display text-lg text-ink">
+            {localized(locale, artist.i18n, "name", artist.name)}
+          </div>
           {period && (
             <div className="text-[11px] uppercase tracking-[0.25em] text-ink-faint">
               {periodName(locale, period.name)}

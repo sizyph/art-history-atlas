@@ -10,7 +10,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx scripts/ingest.ts",
-    "ingest:dry": "tsx scripts/ingest.ts --dry"
+    "ingest:dry": "tsx scripts/ingest.ts --dry",
+    "translate": "tsx scripts/translate.ts"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

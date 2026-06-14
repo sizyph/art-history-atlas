@@ -46,6 +46,9 @@ export const artists = pgTable(
     wikipediaTitle: text("wikipedia_title"),
     wikipediaUrl: text("wikipedia_url"),
     orderIndex: integer("order_index").notNull().default(0),
+    i18n: jsonb("i18n").$type<
+      Record<string, { name?: string; nationality?: string; bio?: string }>
+    >(),
   },
   (t) => [index("artists_period_idx").on(t.periodId)],
 );
@@ -77,6 +80,9 @@ export const paintings = pgTable(
     wikipediaUrl: text("wikipedia_url"),
     sourceUrl: text("source_url"),
     orderIndex: integer("order_index").notNull().default(0),
+    i18n: jsonb("i18n").$type<
+      Record<string, { title?: string; story?: string }>
+    >(),
   },
   (t) => [index("paintings_artist_idx").on(t.artistId)],
 );

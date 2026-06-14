@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { StarArtist } from "@/lib/timeline";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { periodName } from "@/lib/i18n";
+import { localized, periodName } from "@/lib/i18n";
 
 export default function ArtistCard({
   artist,
@@ -40,7 +40,16 @@ export default function ArtistCard({
     artist.birthYear != null || artist.deathYear != null
       ? `${artist.birthYear ?? "?"} – ${artist.deathYear ?? "?"}`
       : null;
-  const sub = [artist.nationality, periodName(locale, artist.periodName)]
+  const displayName =
+    localized(locale, artist.i18n, "name", artist.name) ?? artist.name;
+  const displayBio = localized(locale, artist.i18n, "bio", artist.bio);
+  const nationality = localized(
+    locale,
+    artist.i18n,
+    "nationality",
+    artist.nationality,
+  );
+  const sub = [nationality, periodName(locale, artist.periodName)]
     .filter(Boolean)
     .join(" · ");
   const canEnter = artist.paintingCount > 0;
@@ -99,7 +108,7 @@ export default function ArtistCard({
                 style={{ background: "#221D16", border: "1px solid #38322A" }}
               >
                 <span className="font-display text-3xl text-ink-faint">
-                  {artist.name[0]}
+                  {displayName[0]}
                 </span>
               </div>
             )}
@@ -107,7 +116,7 @@ export default function ArtistCard({
 
           <div className="min-w-0 flex-1 pt-1">
             <h2 className="font-display text-[26px] font-medium leading-tight text-ink">
-              {artist.name}
+              {displayName}
             </h2>
             {dates && (
               <div
@@ -142,7 +151,7 @@ export default function ArtistCard({
               overflow: "hidden",
             }}
           >
-            {artist.bio ?? t("biographyUnavailable")}
+            {displayBio ?? t("biographyUnavailable")}
           </p>
         </div>
 

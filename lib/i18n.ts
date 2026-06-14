@@ -119,3 +119,17 @@ export function periodName(locale: Locale, enName: string): string {
   if (locale === "en") return enName;
   return PERIOD_NAMES[enName]?.[locale] ?? enName;
 }
+
+/** Pick a localized field from a DB i18n blob, falling back to the base value. */
+export function localized(
+  locale: Locale,
+  i18n: unknown,
+  field: string,
+  fallback: string | null,
+): string | null {
+  if (locale !== "en" && i18n && typeof i18n === "object") {
+    const v = (i18n as Record<string, Record<string, unknown>>)[locale]?.[field];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return fallback;
+}

@@ -1,3 +1,7 @@
+export type ArtistI18n =
+  | Record<string, { name?: string; nationality?: string; bio?: string }>
+  | null;
+
 export type LayoutInputPeriod = {
   id: number;
   slug: string;
@@ -23,6 +27,7 @@ export type LayoutInputArtist = {
   wikipediaUrl: string | null;
   orderIndex: number;
   paintingCount: number;
+  i18n: ArtistI18n;
 };
 
 export type LayoutInput = {
@@ -45,6 +50,7 @@ export type StarArtist = {
   paintingCount: number;
   periodColor: string;
   periodName: string;
+  i18n: ArtistI18n;
 };
 
 export type Galaxy = {
@@ -112,6 +118,7 @@ export function buildLayout(input: LayoutInput): Layout {
         paintingCount: Number(a.paintingCount),
         periodColor: p.color,
         periodName: p.name,
+        i18n: a.i18n,
       };
     });
 

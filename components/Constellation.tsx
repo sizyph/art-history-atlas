@@ -6,7 +6,7 @@ import ArtistCard from "@/components/ArtistCard";
 import ConstellationFilter from "@/components/ConstellationFilter";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { periodName } from "@/lib/i18n";
+import { localized, periodName } from "@/lib/i18n";
 
 function Starfield() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -385,7 +385,7 @@ export default function Constellation({ layout }: { layout: Layout }) {
                     opacity: labelsOn,
                   }}
                 >
-                  {a.name}
+                  {localized(locale, a.i18n, "name", a.name)}
                 </div>
               </div>
             )),

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { Painting } from "@/db/schema";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localized } from "@/lib/i18n";
 
 export default function InspectOverlay({
   painting,
@@ -28,7 +29,11 @@ export default function InspectOverlay({
     };
   }, [onClose]);
 
+  const { locale } = useLocale();
   const facts = (painting.facts ?? []) as string[];
+  const title =
+    localized(locale, painting.i18n, "title", painting.title) ?? painting.title;
+  const story = localized(locale, painting.i18n, "story", painting.story);
 
   return (
     <div
@@ -68,7 +73,7 @@ export default function InspectOverlay({
         <div className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-7 md:w-[360px]">
           <div>
             <h2 className="font-display text-[26px] leading-tight text-ink">
-              {painting.title}
+              {title}
             </h2>
             <div className="mt-1 text-sm" style={{ color: accent }}>
               {painting.year ?? t("dateUnknown")}
@@ -76,9 +81,9 @@ export default function InspectOverlay({
             </div>
           </div>
 
-          {painting.story && (
+          {story && (
             <p className="text-[14px] leading-relaxed text-ink-soft">
-              {painting.story}
+              {story}
             </p>
           )}
 
