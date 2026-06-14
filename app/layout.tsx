@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/components/LocaleProvider";
+import { AudioProvider } from "@/components/AudioProvider";
+import AudioControl from "@/components/AudioControl";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -31,7 +33,12 @@ export default function RootLayout({
       className={`${inter.variable} ${cormorant.variable} h-full antialiased`}
     >
       <body className="min-h-full">
-        <LocaleProvider>{children}</LocaleProvider>
+        <LocaleProvider>
+          <AudioProvider>
+            {children}
+            <AudioControl />
+          </AudioProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

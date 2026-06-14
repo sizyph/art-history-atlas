@@ -6,6 +6,7 @@ import ArtistCard from "@/components/ArtistCard";
 import ConstellationFilter from "@/components/ConstellationFilter";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
+import { useAudio } from "@/components/AudioProvider";
 import { localized, periodName } from "@/lib/i18n";
 
 type View = { x: number; y: number; scale: number };
@@ -304,6 +305,10 @@ export default function Constellation({ layout }: { layout: Layout }) {
   } | null>(null);
   const { locale } = useLocale();
   const t = useT();
+  const { setScene: setAudioScene } = useAudio();
+  useEffect(() => {
+    setAudioScene("constellation");
+  }, [setAudioScene]);
 
   const bounds = useMemo(() => {
     let minX = Infinity;

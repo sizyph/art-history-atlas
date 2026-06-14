@@ -23,6 +23,7 @@ import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
+import { useAudio } from "@/components/AudioProvider";
 import { localized, periodName } from "@/lib/i18n";
 
 const WALL_COLOR = "#1b1712";
@@ -249,9 +250,13 @@ function Room({ depth }: { depth: number }) {
 function Player({
   depth,
   enabled,
+  onStep,
+  onDepth,
 }: {
   depth: number;
   enabled: React.RefObject<boolean>;
+  onStep?: () => void;
+  onDepth?: (d: number) => void;
 }) {
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({});
@@ -286,6 +291,8 @@ function Player({
   const front = useRef(new THREE.Vector3());
   const side = useRef(new THREE.Vector3());
   const dir = useRef(new THREE.Vector3());
+  const stepAccum = useRef(0);
+  const depthT = useRef(0);
 
   useFrame((_, dt) => {
     if (!enabled.current) return;
@@ -301,13 +308,27 @@ function Player({
     if (keys.current.l) dir.current.sub(side.current);
     if (dir.current.lengthSq() > 0) {
       dir.current.normalize();
-      camera.position.addScaledVector(dir.current, speed * Math.min(dt, 0.05));
+      const moved = speed * Math.min(dt, 0.05);
+      camera.position.addScaledVector(dir.current, moved);
+      stepAccum.current += moved;
+      if (stepAccum.current > 1.7) {
+        stepAccum.current = 0;
+        onStep?.();
+      }
     }
     const hx = ROOM_WIDTH / 2 - 0.7;
     const hz = depth / 2 - 0.7;
     camera.position.x = Math.max(-hx, Math.min(hx, camera.position.x));
     camera.position.z = Math.max(-hz, Math.min(hz, camera.position.z));
     camera.position.y = EYE;
+
+    depthT.current += dt;
+    if (depthT.current > 0.3) {
+      depthT.current = 0;
+      onDepth?.(
+        Math.max(0, Math.min(1, (depth / 2 - camera.position.z) / depth)),
+      );
+    }
   });
 
   return null;
@@ -720,6 +741,11 @@ export default function Gallery({
   const accent = period?.color ?? "#c9a24b";
   const t = useT();
   const { locale } = useLocale();
+  const { setScene: setAudioScene, setGalleryDepth, step } = useAudio();
+  useEffect(() => {
+    setAudioScene("gallery");
+    return () => setAudioScene("off");
+  }, [setAudioScene]);
   const [inspect, setInspect] = useState<Painting | null>(null);
   const [phase, setPhase] = useState<0 | 1 | 2>(intro ? 0 : 2);
   const moving = useRef(!intro);
@@ -815,7 +841,12 @@ export default function Gallery({
           </TexBoundary>
         ))}
 
-        <Player depth={depth} enabled={moving} />
+        <Player
+          depth={depth}
+          enabled={moving}
+          onStep={step}
+          onDepth={setGalleryDepth}
+        />
         <Controls didDrag={didDrag} enabled={looking} />
         {intro && (
           <IntroCamera
