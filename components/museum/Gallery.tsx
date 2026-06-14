@@ -323,25 +323,71 @@ function makeLabelTexture(title: string, year: number | null): THREE.CanvasTextu
   return tex;
 }
 
+// Visual busyness of the loaded image, 0 (sparse/flat) → 1 (dense/detailed),
+// from the mean luminance gradient of a small downsample. Same-origin via the
+// /api/img proxy, so the canvas isn't tainted and pixels are readable.
+function imageComplexity(img: HTMLImageElement): number {
+  try {
+    const N = 36;
+    const cv = document.createElement("canvas");
+    cv.width = N;
+    cv.height = N;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 0.5;
+    ctx.drawImage(img, 0, 0, N, N);
+    const d = ctx.getImageData(0, 0, N, N).data;
+    const lum = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++)
+      lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    let sum = 0;
+    let cnt = 0;
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const i = y * N + x;
+        if (x < N - 1) {
+          sum += Math.abs(lum[i] - lum[i + 1]);
+          cnt++;
+        }
+        if (y < N - 1) {
+          sum += Math.abs(lum[i] - lum[i + N]);
+          cnt++;
+        }
+      }
+    const edge = sum / Math.max(1, cnt); // mean |gradient| of 0..255 luminance
+    return Math.max(0, Math.min(1, (edge - 5) / 17));
+  } catch {
+    return 0.5;
+  }
+}
+
 function PaintingFrame({
   hang,
-  prof,
-  light,
+  museum,
+  accent,
   label,
   year,
   onInspect,
 }: {
   hang: Hang;
-  prof: FrameProfile;
-  light: Museum["pictureLight"];
+  museum: Museum;
+  accent: string;
   label: string;
   year: number | null;
   onInspect: (p: Painting) => void;
 }) {
   const tex = useTexture(wallTextureUrl(hang.p));
+  const light = museum.pictureLight;
   const lightRef = useRef<THREE.SpotLight>(null);
   const targetRef = useRef<THREE.Object3D>(null);
   const [labelTex, setLabelTex] = useState<THREE.CanvasTexture | null>(null);
+
+  const prof = useMemo(() => {
+    const complexity =
+      museum.frameApproach === "contrast"
+        ? imageComplexity(tex.image as HTMLImageElement)
+        : 0.5;
+    return frameProfile(museum, accent, complexity);
+  }, [museum, accent, tex]);
 
   useEffect(() => {
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1475,7 +1521,6 @@ export default function Gallery({
   const accent = museum.accentFromPeriod
     ? (period?.color ?? museum.signature)
     : museum.signature;
-  const periodNameStr = period?.name ?? null;
   const t = useT();
   const { locale } = useLocale();
   const { setScene: setAudioScene, setFacing, setDepth, step, setArtwork } =
@@ -1616,8 +1661,8 @@ export default function Gallery({
             <Suspense fallback={null}>
               <PaintingFrame
                 hang={hang}
-                prof={frameProfile(museum, periodNameStr, hang.p.year, accent)}
-                light={museum.pictureLight}
+                museum={museum}
+                accent={accent}
                 label={
                   localized(locale, hang.p.i18n, "title", hang.p.title) ??
                   hang.p.title

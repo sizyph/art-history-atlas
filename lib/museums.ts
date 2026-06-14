@@ -90,7 +90,12 @@ export type Museum = {
   intro: IntroKind;
   signature: string; // ties the entry transition + non-period accents together
   accentFromPeriod: boolean;
-  frame: FrameStrategy;
+  frame: FrameStrategy; // the frame's material family / palette
+  // how the frame's richness is decided: "uniform" = the same for every work
+  // (frameUniform sets how rich); "contrast" = inverse to the painting's visual
+  // busyness, so a sparse work gets an elaborate frame and a dense one a plain.
+  frameApproach: "uniform" | "contrast";
+  frameUniform: number; // fixed richness 0..1 when approach is "uniform"
   descMount: DescMount;
   desc: DescPalette;
 };
@@ -142,6 +147,8 @@ export const MUSEUMS: Museum[] = [
     signature: "#c9a24b",
     accentFromPeriod: true,
     frame: "period",
+    frameApproach: "contrast",
+    frameUniform: 0.5,
     descMount: "wall",
     desc: DARK_DESC,
   },
@@ -184,6 +191,8 @@ export const MUSEUMS: Museum[] = [
     signature: "#c8a24b",
     accentFromPeriod: true,
     frame: "salon",
+    frameApproach: "uniform",
+    frameUniform: 0.85,
     descMount: "wall",
     desc: {
       panel: "#efe6d2",
@@ -233,6 +242,8 @@ export const MUSEUMS: Museum[] = [
     signature: "#7d9b6a",
     accentFromPeriod: true,
     frame: "minimalWood",
+    frameApproach: "uniform",
+    frameUniform: 0.45,
     descMount: "placard",
     desc: {
       panel: "#f4f1e8",
@@ -282,6 +293,8 @@ export const MUSEUMS: Museum[] = [
     signature: "#4a4e54",
     accentFromPeriod: false,
     frame: "contemporary",
+    frameApproach: "uniform",
+    frameUniform: 0,
     descMount: "placard",
     desc: {
       panel: "#1b1c1e",
@@ -331,6 +344,8 @@ export const MUSEUMS: Museum[] = [
     signature: "#9a7b3c",
     accentFromPeriod: true,
     frame: "nihon",
+    frameApproach: "contrast",
+    frameUniform: 0.5,
     descMount: "scroll",
     desc: {
       panel: "#1c1710",
@@ -351,38 +366,6 @@ export function getMuseum(id: string | null | undefined): Museum {
 
 // ---- Framing -------------------------------------------------------------
 
-// How much a painting's era wants ornament, 0 (modern, frameless) → 1 (heavy gilt).
-const PERIOD_ORNATE: Record<string, number> = {
-  "Medieval & Gothic": 0.85,
-  "Early Renaissance": 0.9,
-  "High Renaissance": 1,
-  "Northern Renaissance": 0.95,
-  Baroque: 1,
-  Rococo: 1,
-  Neoclassicism: 0.85,
-  Romanticism: 0.7,
-  Realism: 0.55,
-  Impressionism: 0.5,
-  "Post-Impressionism": 0.4,
-  Expressionism: 0.2,
-  Cubism: 0.1,
-  Surrealism: 0.15,
-  "Abstract Expressionism": 0.05,
-  "Pop Art": 0.05,
-  Contemporary: 0.05,
-};
-
-function ornateScore(periodName: string | null, year: number | null): number {
-  if (periodName && periodName in PERIOD_ORNATE) return PERIOD_ORNATE[periodName];
-  if (year == null) return 0.5;
-  if (year < 1600) return 0.95;
-  if (year < 1780) return 0.95;
-  if (year < 1850) return 0.75;
-  if (year < 1890) return 0.5;
-  if (year < 1915) return 0.35;
-  return 0.1;
-}
-
 export type FrameProfile = {
   style: "ornate" | "wood" | "float" | "none" | "silk";
   border: number; // face width of the moulding (m)
@@ -397,23 +380,27 @@ export type FrameProfile = {
   gap: number; // shadow gap for float frames
 };
 
-// A frame is chosen from the museum's strategy *and* the painting's era — the
-// way a curator would dress each work for a temporary hang.
+// Each museum frames as a curatorial statement. "richness" (r, 0..1) is how
+// elaborate the frame should be: uniform museums fix it; adaptive ones invert
+// the painting's own visual busyness (complexity), so a sparse work earns an
+// elaborate frame to draw the eye and a dense one a restrained mount.
 export function frameProfile(
   museum: Museum,
-  periodName: string | null,
-  year: number | null,
   accent: string,
+  complexity: number,
 ): FrameProfile {
-  const orn = ornateScore(periodName, year);
+  const r =
+    museum.frameApproach === "contrast"
+      ? 1 - Math.max(0, Math.min(1, complexity))
+      : museum.frameUniform;
 
   const GOLD = "#b08a3c";
   const DARKGOLD = "#8a6a2c";
 
   switch (museum.frame) {
     case "salon": {
-      // Orsay: a gilded Salon frame on everything, richer for older works.
-      const rich = orn > 0.6;
+      // Orsay: a gilded Salon frame on every work — the academic hang.
+      const rich = r > 0.6;
       return {
         style: "ornate",
         border: rich ? 0.2 : 0.13,
@@ -421,7 +408,7 @@ export function frameProfile(
         color: GOLD,
         metalness: 0.85,
         roughness: 0.36,
-        mat: orn < 0.45 ? 0.07 : 0,
+        mat: r < 0.45 ? 0.07 : 0,
         matColor: "#efe7d2",
         lip: true,
         steps: rich ? 3 : 2,
@@ -430,7 +417,7 @@ export function frameProfile(
     }
     case "minimalWood": {
       // Chiba: slim natural-wood floaters; the most modern works go frameless.
-      if (orn < 0.18)
+      if (r < 0.18)
         return {
           style: "none",
           border: 0.02,
@@ -460,7 +447,7 @@ export function frameProfile(
     }
     case "contemporary": {
       // HongKun: black floaters, frameless for the newest works.
-      if (orn < 0.25)
+      if (r < 0.25)
         return {
           style: "none",
           border: 0.02,
@@ -489,15 +476,16 @@ export function frameProfile(
       };
     }
     case "nihon": {
-      // Nezu: restrained dark wood with a wide silk/linen mat.
+      // Nezu: dark wood + silk mat, restrained and adaptive — a sparse work
+      // earns a wider silk mount and a touch more wood, a dense one a slim mount.
       return {
         style: "silk",
-        border: 0.06,
-        depth: 0.07,
+        border: 0.04 + r * 0.05,
+        depth: 0.06 + r * 0.03,
         color: "#241b12",
         metalness: 0,
         roughness: 0.6,
-        mat: 0.12,
+        mat: 0.06 + r * 0.13,
         matColor: "#cdbfa0",
         lip: false,
         steps: 1,
@@ -506,7 +494,7 @@ export function frameProfile(
     }
     default: {
       // "period" — the default gallery dresses each work to its time.
-      if (orn >= 0.8)
+      if (r >= 0.8)
         return {
           style: "ornate",
           border: 0.19,
@@ -520,7 +508,7 @@ export function frameProfile(
           steps: 3,
           gap: 0,
         };
-      if (orn >= 0.45)
+      if (r >= 0.45)
         return {
           style: "ornate",
           border: 0.12,
@@ -534,7 +522,7 @@ export function frameProfile(
           steps: 2,
           gap: 0,
         };
-      if (orn >= 0.2)
+      if (r >= 0.2)
         return {
           style: "wood",
           border: 0.06,
