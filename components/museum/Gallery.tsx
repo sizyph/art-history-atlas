@@ -21,6 +21,8 @@ import {
 import * as THREE from "three";
 import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
+import FullscreenViewer from "@/components/museum/FullscreenViewer";
+import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
@@ -439,6 +441,168 @@ function Ceiling({ museum, depth }: { museum: Museum; depth: number }) {
             );
           },
         )}
+
+      {ceilingKind === "industrial" && (
+        <group>
+          {/* a boxed HVAC duct running down the hall */}
+          <mesh position={[-W * 0.16, H - 0.34, 0]}>
+            <boxGeometry args={[0.55, 0.42, depth - 1.2]} />
+            <meshStandardMaterial color="#c9cbce" metalness={0.45} roughness={0.5} />
+          </mesh>
+          {/* service pipes of varied gauge */}
+          {[-W * 0.34, -W * 0.04, W * 0.16, W * 0.33].map((x, i) => (
+            <mesh
+              key={i}
+              position={[x, H - 0.16 - (i % 2) * 0.06, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
+            >
+              <cylinderGeometry
+                args={[
+                  0.045 + (i % 3) * 0.018,
+                  0.045 + (i % 3) * 0.018,
+                  depth - 0.6,
+                  10,
+                ]}
+              />
+              <meshStandardMaterial
+                color={i % 2 ? "#dadbdc" : "#9b9da0"}
+                metalness={0.5}
+                roughness={0.5}
+              />
+            </mesh>
+          ))}
+          {/* black track-light rails with spot fixtures */}
+          {[-W * 0.27, W * 0.27].map((x, r) => (
+            <group key={r}>
+              <mesh position={[x, H - 0.12, 0]}>
+                <boxGeometry args={[0.06, 0.09, depth - 1]} />
+                <meshStandardMaterial
+                  color="#2a2b2d"
+                  metalness={0.3}
+                  roughness={0.6}
+                />
+              </mesh>
+              {Array.from({ length: Math.max(3, Math.round(depth / 3)) }).map(
+                (_, i, arr) => {
+                  const z = -depth / 2 + (depth / (arr.length + 1)) * (i + 1);
+                  return (
+                    <mesh
+                      key={i}
+                      position={[x, H - 0.24, z]}
+                      rotation={[0.5 * (x < 0 ? -1 : 1), 0, 0]}
+                    >
+                      <cylinderGeometry args={[0.05, 0.065, 0.18, 10]} />
+                      <meshStandardMaterial
+                        color="#1b1c1e"
+                        metalness={0.4}
+                        roughness={0.5}
+                      />
+                    </mesh>
+                  );
+                },
+              )}
+            </group>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
+// A white wall pierced by a rounded arch that opens onto a brighter adjoining
+// room — the signature of the converted-factory white cube.
+function PortalWall({
+  W,
+  H,
+  depth,
+  color,
+}: {
+  W: number;
+  H: number;
+  depth: number;
+  color: string;
+}) {
+  const geo = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-W / 2, -H / 2);
+    shape.lineTo(W / 2, -H / 2);
+    shape.lineTo(W / 2, H / 2);
+    shape.lineTo(-W / 2, H / 2);
+    shape.closePath();
+    const aw = 2.7;
+    const ah = 3.4;
+    const r = aw / 2;
+    const base = -H / 2;
+    const hole = new THREE.Path();
+    hole.moveTo(-aw / 2, base);
+    hole.lineTo(-aw / 2, base + ah - r);
+    hole.absarc(0, base + ah - r, r, Math.PI, 0, true);
+    hole.lineTo(aw / 2, base);
+    hole.closePath();
+    shape.holes.push(hole);
+    return new THREE.ShapeGeometry(shape);
+  }, [W, H]);
+  useEffect(() => () => geo.dispose(), [geo]);
+
+  return (
+    <group>
+      <mesh geometry={geo} position={[0, H / 2, -depth / 2]} receiveShadow>
+        <meshStandardMaterial color={color} roughness={0.97} />
+      </mesh>
+      {/* the brighter room glimpsed through the arch */}
+      <mesh position={[0, H / 2, -depth / 2 - 1.7]}>
+        <planeGeometry args={[5, H]} />
+        <meshStandardMaterial color="#e6e7e8" roughness={1} />
+      </mesh>
+      <mesh
+        position={[1.6, H / 2, -depth / 2 - 0.9]}
+        rotation={[0, -Math.PI / 2, 0]}
+      >
+        <planeGeometry args={[1.7, H]} />
+        <meshStandardMaterial color="#d7d8d9" roughness={1} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -depth / 2 - 0.9]}>
+        <planeGeometry args={[3.2, 1.7]} />
+        <meshStandardMaterial color="#5a5c5f" roughness={0.7} metalness={0.2} />
+      </mesh>
+      <pointLight
+        position={[0, H * 0.6, -depth / 2 - 0.8]}
+        intensity={6}
+        distance={9}
+        decay={2}
+        color="#fbfbfa"
+      />
+    </group>
+  );
+}
+
+// Low benches down the middle of the hall — scale, and a place for the eye to
+// rest. Tone follows the room so they belong.
+function Benches({
+  depth,
+  wood,
+}: {
+  depth: number;
+  wood: boolean;
+}) {
+  const zs = depth > 22 ? [depth * 0.16, -depth * 0.16] : [0];
+  const top = wood ? "#6b4a2d" : "#26272a";
+  return (
+    <group>
+      {zs.map((z, i) => (
+        <group key={i} position={[0, 0, z]}>
+          <mesh position={[0, 0.46, 0]} castShadow>
+            <boxGeometry args={[1.5, 0.12, 0.6]} />
+            <meshStandardMaterial color={top} roughness={0.5} metalness={wood ? 0 : 0.3} />
+          </mesh>
+          {[-0.62, 0.62].map((x) => (
+            <mesh key={x} position={[x, 0.22, 0]}>
+              <boxGeometry args={[0.1, 0.44, 0.5]} />
+              <meshStandardMaterial color="#1a1a1c" roughness={0.6} metalness={0.4} />
+            </mesh>
+          ))}
+        </group>
+      ))}
     </group>
   );
 }
@@ -506,11 +670,15 @@ function Room({ museum, depth }: { museum: Museum; depth: number }) {
         <planeGeometry args={[depth, H]} />
         {wallMat}
       </mesh>
-      {/* far wall */}
-      <mesh receiveShadow position={[0, H / 2, -depth / 2]}>
-        <planeGeometry args={[W, H]} />
-        {wallMat}
-      </mesh>
+      {/* far wall (pierced by an arched portal in the white-cube) */}
+      {museum.portal ? (
+        <PortalWall W={W} H={H} depth={depth} color={wall} />
+      ) : (
+        <mesh receiveShadow position={[0, H / 2, -depth / 2]}>
+          <planeGeometry args={[W, H]} />
+          {wallMat}
+        </mesh>
+      )}
       {/* near wall */}
       <mesh receiveShadow position={[0, H / 2, depth / 2]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[W, H]} />
@@ -555,6 +723,11 @@ function Room({ museum, depth }: { museum: Museum; depth: number }) {
           ))}
         </group>
       )}
+
+      <Benches
+        depth={depth}
+        wood={museum.wallKind === "timber" || museum.floor === "parquet"}
+      />
     </group>
   );
 }
@@ -708,9 +881,6 @@ function Controls({
   return null;
 }
 
-const INTRO_READ = 1.7; // seconds dwelling on the placard
-const INTRO_TURN = 1.4; // seconds turning to face the gallery
-
 // The entry adapts to the museum: a dim placard read (default), a bright
 // daylight wash that the eye settles out of (Orsay/Chiba), spotlights punching
 // in from black (HongKun), or a slow warm paper-screen fade (Nezu).
@@ -729,15 +899,6 @@ function IntroCamera({
   const start = useRef<number | null>(null);
   const turned = useRef(false);
   const done = useRef(false);
-  const lit = useRef(
-    museum.intro === "spotlight"
-      ? 0
-      : museum.intro === "shoji"
-        ? 0.05
-        : museum.intro === "daylight"
-          ? 1
-          : 0.32,
-  );
 
   const setLights = (state: { scene: THREE.Scene }, factor: number) => {
     state.scene.traverse((o) => {
@@ -749,15 +910,25 @@ function IntroCamera({
     });
   };
 
+  // smoothstep — gives an eased, buttery in/out instead of a per-frame lerp
+  const ease = (x: number) => {
+    const c = Math.max(0, Math.min(1, x));
+    return c * c * (3 - 2 * c);
+  };
+
   useFrame((state) => {
     if (!active || done.current) return;
     const gl = state.gl as THREE.WebGLRenderer;
+    const cam = camera as THREE.PerspectiveCamera;
     if (start.current === null) {
       start.current = state.clock.elapsedTime;
-      if (museum.intro === "placard") camera.rotation.y = 0.06;
-      else if (museum.intro === "daylight") {
-        camera.rotation.y = 0.1;
-        camera.rotation.x = 0.1;
+      if (museum.intro === "placard") {
+        camera.rotation.y = 1.12;
+        cam.fov = 40;
+        cam.updateProjectionMatrix();
+      } else if (museum.intro === "daylight") {
+        camera.rotation.y = 0.14;
+        camera.rotation.x = 0.08;
       } else camera.rotation.y = 0;
     }
     const e = state.clock.elapsedTime - start.current;
@@ -766,6 +937,10 @@ function IntroCamera({
       done.current = true;
       camera.rotation.y = 0;
       camera.rotation.x = 0;
+      if (cam.fov !== 62) {
+        cam.fov = 62;
+        cam.updateProjectionMatrix();
+      }
       setLights(state, 1);
       gl.toneMappingExposure = museum.exposure;
       onDone();
@@ -779,46 +954,45 @@ function IntroCamera({
 
     if (museum.intro === "daylight") {
       turn();
-      camera.rotation.y += (0 - camera.rotation.y) * 0.05;
-      camera.rotation.x += (0 - camera.rotation.x) * 0.05;
-      lit.current += (1 - lit.current) * 0.05;
-      setLights(state, lit.current);
-      const k = Math.min(1, e / 1.8);
-      gl.toneMappingExposure = museum.exposure * (1.85 - 0.85 * k);
-      if (e > 2.0) finish();
+      const k = ease(e / 2.0);
+      camera.rotation.y = 0.14 * (1 - k);
+      camera.rotation.x = 0.08 * (1 - k);
+      setLights(state, 1);
+      gl.toneMappingExposure = museum.exposure * (1.7 - 0.7 * k);
+      if (e > 2.1) finish();
     } else if (museum.intro === "spotlight") {
-      if (e < 0.55) {
+      if (e < 0.5) {
         setLights(state, 0);
       } else {
         turn();
-        lit.current += (1 - lit.current) * 0.1;
-        setLights(state, lit.current);
+        setLights(state, ease((e - 0.5) / 1.1));
       }
       if (e > 1.7) finish();
     } else if (museum.intro === "shoji") {
       if (e > 0.3) turn();
-      lit.current += (1 - lit.current) * 0.035;
-      setLights(state, lit.current);
-      camera.rotation.y += (0 - camera.rotation.y) * 0.04;
-      const k = Math.min(1, e / 2.2);
-      gl.toneMappingExposure = museum.exposure * (0.7 + 0.3 * k);
-      if (e > 2.4) finish();
+      const k = ease(e / 2.3);
+      setLights(state, 0.05 + 0.95 * k);
+      gl.toneMappingExposure = museum.exposure * (0.72 + 0.28 * k);
+      if (e > 2.5) finish();
     } else {
-      // placard
-      let targetYaw: number;
-      let targetLit: number;
-      if (e < INTRO_READ) {
-        targetYaw = 1.2;
-        targetLit = 0.32;
+      // placard: dwell on the description (zoomed in), then widen the field of
+      // view and turn so the gallery opens up *around* it.
+      const READ = 1.1;
+      const OPEN = 2.1;
+      if (e < READ) {
+        camera.rotation.y = 1.12;
+        cam.fov = 40;
+        cam.updateProjectionMatrix();
+        setLights(state, 0.36);
       } else {
-        targetYaw = 0;
-        targetLit = 1;
         turn();
+        const k = ease((e - READ) / OPEN);
+        camera.rotation.y = 1.12 * (1 - k);
+        cam.fov = 40 + 22 * k;
+        cam.updateProjectionMatrix();
+        setLights(state, 0.36 + 0.64 * k);
+        if (e > READ + OPEN) finish();
       }
-      camera.rotation.y += (targetYaw - camera.rotation.y) * 0.07;
-      lit.current += (targetLit - lit.current) * 0.05;
-      setLights(state, lit.current);
-      if (e > INTRO_READ + INTRO_TURN) finish();
     }
   });
 
@@ -851,7 +1025,7 @@ function EyeFocus({
       camera.getWorldDirection(dir.current);
       tp.current.copy(camera.position).addScaledVector(dir.current, 6);
     }
-    fp.current.lerp(tp.current, 0.25);
+    fp.current.lerp(tp.current, 0.4);
     dof.target = fp.current;
   });
   return null;
@@ -1173,6 +1347,8 @@ export default function Gallery({
     return () => setAudioScene("off");
   }, [setAudioScene]);
   const [inspect, setInspect] = useState<Painting | null>(null);
+  const [fullscreen, setFullscreen] = useState<Painting | null>(null);
+  const lastClick = useRef(0);
   const [phase, setPhase] = useState<0 | 1 | 2>(intro ? 0 : 2);
   const moving = useRef(!intro);
   const looking = useRef(!intro);
@@ -1211,9 +1387,18 @@ export default function Gallery({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintings, artist, locale]);
 
+  // single click opens the inspector; a quick second click (double-click) on a
+  // painting jumps straight to full screen.
   const onInspect = (p: Painting) => {
     if (didDrag.current) return;
-    setInspect(p);
+    const now = performance.now();
+    if (now - lastClick.current < 320) {
+      setInspect(null);
+      setFullscreen(p);
+    } else {
+      setInspect(p);
+    }
+    lastClick.current = now;
   };
 
   return (
@@ -1307,12 +1492,15 @@ export default function Gallery({
         <EyeFocus dofRef={dofRef} />
 
         <EffectComposer>
+          {/* gentle depth separation — the centre subject stays crisp */}
           <DepthOfField
             ref={dofRef}
-            bokehScale={2.2}
-            focusRange={0.006}
+            bokehScale={1.4}
+            focusRange={0.03}
             focalLength={0.02}
           />
+          {/* the gaze: sharp centre, blur growing into the corners */}
+          <PeripheralBlur intensity={7} innerRadius={0.24} outerRadius={0.62} />
           <Bloom
             intensity={museum.bloom}
             luminanceThreshold={museum.bloomThreshold}
@@ -1363,6 +1551,13 @@ export default function Gallery({
           onClose={() => setInspect(null)}
         />
       )}
+
+      {fullscreen && (
+        <FullscreenViewer
+          painting={fullscreen}
+          onClose={() => setFullscreen(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1378,7 +1573,7 @@ function FadeIn() {
       className="pointer-events-none absolute inset-0 bg-black"
       style={{
         opacity: gone ? 0 : 1,
-        transition: "opacity 1.2s ease",
+        transition: "opacity 0.7s ease",
       }}
     />
   );

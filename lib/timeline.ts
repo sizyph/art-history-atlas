@@ -44,6 +44,8 @@ export type ConstellationLink = {
   by: number;
   color: string;
   note: string | null;
+  aName: string; // the influenced artist
+  bName: string; // the influencer
 };
 
 export type StarArtist = {
@@ -149,10 +151,13 @@ export function buildLayout(input: LayoutInput): Layout {
     };
   });
 
-  const pos = new Map<string, { x: number; y: number; color: string }>();
+  const pos = new Map<
+    string,
+    { x: number; y: number; color: string; name: string }
+  >();
   for (const g of galaxies) {
     for (const a of g.artists) {
-      pos.set(a.slug, { x: a.x, y: a.y, color: g.color });
+      pos.set(a.slug, { x: a.x, y: a.y, color: g.color, name: a.name });
     }
   }
   const links: ConstellationLink[] = [];
@@ -168,6 +173,8 @@ export function buildLayout(input: LayoutInput): Layout {
       by: b.y,
       color: a.color,
       note: inf.note,
+      aName: a.name,
+      bName: b.name,
     });
   }
 

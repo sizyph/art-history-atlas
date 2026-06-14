@@ -6,6 +6,23 @@ import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized } from "@/lib/i18n";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
 
+function ExpandIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 3H3v5M16 3h5v5M16 21h5v-5M8 21H3v-5" />
+    </svg>
+  );
+}
+
 export default function InspectOverlay({
   painting,
   accent,
@@ -67,14 +84,18 @@ export default function InspectOverlay({
           <img
             src={painting.imageUrl}
             alt={painting.title}
-            className="max-h-[82vh] max-w-full object-contain"
+            onClick={() => setFs(true)}
+            title={t("fullscreen")}
+            className="max-h-[82vh] max-w-full cursor-zoom-in object-contain"
             style={{ boxShadow: `0 0 0 1px ${accent}55, 0 30px 80px -20px #000` }}
           />
           <button
             onClick={() => setFs(true)}
-            className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full border border-white/15 bg-black/50 px-3 py-1.5 text-[11px] text-ink backdrop-blur transition-colors hover:bg-black/70"
+            aria-label={t("fullscreen")}
+            title={t("fullscreen")}
+            className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/25 text-white/80 backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white"
           >
-            ⤢ {t("fullscreen")}
+            <ExpandIcon />
           </button>
         </div>
 

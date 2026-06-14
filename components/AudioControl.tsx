@@ -35,22 +35,14 @@ export default function AudioControl() {
 
   return (
     <div
-      className="pointer-events-auto fixed bottom-5 left-5 z-40 flex items-center gap-2"
+      className="pointer-events-auto fixed bottom-5 right-5 z-40 flex items-center gap-2"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <button
-        onClick={() => setMuted(!muted)}
-        aria-label={muted ? "Unmute" : "Mute"}
-        title={ready ? (muted ? "Unmute" : "Mute") : "Sound on"}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-black/40 text-ink-soft backdrop-blur transition-colors hover:text-ink"
-      >
-        <SpeakerIcon on={on} />
-      </button>
       <div
         style={{
-          width: open ? 92 : 0,
-          opacity: open ? 1 : 0,
+          width: open && !muted ? 96 : 0,
+          opacity: open && !muted ? 1 : 0,
           overflow: "hidden",
           transition: "width 0.25s ease, opacity 0.25s ease",
         }}
@@ -63,10 +55,18 @@ export default function AudioControl() {
           value={volume}
           onChange={(e) => setVolume(parseFloat(e.target.value))}
           aria-label="Volume"
-          className="audio-slider w-[88px]"
+          className="audio-slider w-[92px]"
           style={{ accentColor: "var(--gold)" }}
         />
       </div>
+      <button
+        onClick={() => setMuted(!muted)}
+        aria-label={muted ? "Play sound" : "Mute"}
+        title={muted ? "Play sound" : "Mute"}
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-black/40 text-ink-soft backdrop-blur transition-colors hover:text-ink"
+      >
+        <SpeakerIcon on={on} />
+      </button>
     </div>
   );
 }

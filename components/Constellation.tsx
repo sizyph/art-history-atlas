@@ -265,6 +265,12 @@ function starPortrait(url: string | null): string | null {
   return url;
 }
 
+// Surname for the influence label (last word of the name).
+function lastName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] || name;
+}
+
 // A gently undulating path between two stars (an influence link).
 function wavyPath(ax: number, ay: number, bx: number, by: number): string {
   const dx = bx - ax;
@@ -299,7 +305,8 @@ export default function Constellation({ layout }: { layout: Layout }) {
   const [highlight, setHighlight] = useState<string[] | null>(null);
   const [linkTip, setLinkTip] = useState<{
     key: string;
-    note: string;
+    title: string;
+    note: string | null;
     x: number;
     y: number;
   } | null>(null);
@@ -565,28 +572,34 @@ export default function Constellation({ layout }: { layout: Layout }) {
               )),
             )}
           {starsOn > 0 &&
-            layout.links.map((lk) => (
-              <g key={lk.key}>
-                <path
-                  d={wavyPath(lk.ax, lk.ay, lk.bx, lk.by)}
-                  fill="none"
-                  stroke="#5b93e0"
-                  strokeOpacity={linkTip?.key === lk.key ? 0.95 : 0.42 * starsOn}
-                  strokeWidth={linkTip?.key === lk.key ? 2.2 : 1.3}
-                  vectorEffect="non-scaling-stroke"
-                />
-                {lk.note && (
+            layout.links.map((lk) => {
+              const d = wavyPath(lk.ax, lk.ay, lk.bx, lk.by);
+              const title = `${lastName(lk.bName)} – ${lastName(lk.aName)}`;
+              return (
+                <g key={lk.key}>
                   <path
-                    d={wavyPath(lk.ax, lk.ay, lk.bx, lk.by)}
+                    d={d}
+                    fill="none"
+                    stroke="#5b93e0"
+                    strokeOpacity={
+                      linkTip?.key === lk.key ? 0.98 : 0.42 * starsOn
+                    }
+                    strokeWidth={linkTip?.key === lk.key ? 2.6 : 1.3}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {/* a wide invisible corridor so every link is hoverable */}
+                  <path
+                    d={d}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={16}
+                    strokeWidth={26}
                     vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: "stroke", cursor: "help" }}
                     onPointerEnter={(e) =>
                       setLinkTip({
                         key: lk.key,
-                        note: lk.note as string,
+                        title,
+                        note: lk.note,
                         x: e.clientX,
                         y: e.clientY,
                       })
@@ -601,9 +614,9 @@ export default function Constellation({ layout }: { layout: Layout }) {
                     onPointerLeave={() => setLinkTip(null)}
                     onClick={(e) => e.stopPropagation()}
                   />
-                )}
-              </g>
-            ))}
+                </g>
+              );
+            })}
         </svg>
 
         {layout.galaxies.map((g, gi) => (
@@ -712,8 +725,12 @@ export default function Constellation({ layout }: { layout: Layout }) {
                   style={{
                     left: 0,
                     top: 0,
-                    width: 24,
-                    height: 24,
+                    width: 58,
+                    height: 58,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: "50%",
                     transform: `translate(-50%, -50%) scale(${inv})`,
                   }}
                 >
@@ -721,13 +738,13 @@ export default function Constellation({ layout }: { layout: Layout }) {
                     <span
                       style={{
                         display: "block",
-                        width: 17,
-                        height: 17,
+                        width: 51,
+                        height: 51,
                         borderRadius: "50%",
                         overflow: "hidden",
-                        border: `1.5px solid ${g.color}`,
+                        border: `2px solid ${g.color}`,
                         boxSizing: "border-box",
-                        boxShadow: `0 0 9px 1px ${g.color}`,
+                        boxShadow: `0 0 16px 2px ${g.color}`,
                         background: "#221d16",
                       }}
                     >
@@ -748,11 +765,11 @@ export default function Constellation({ layout }: { layout: Layout }) {
                     <span
                       style={{
                         display: "block",
-                        width: 9,
-                        height: 9,
+                        width: 27,
+                        height: 27,
                         borderRadius: "50%",
                         background: "#efe9dd",
-                        boxShadow: `0 0 10px 2px ${g.color}`,
+                        boxShadow: `0 0 18px 3px ${g.color}`,
                       }}
                     />
                   )}
@@ -819,8 +836,11 @@ export default function Constellation({ layout }: { layout: Layout }) {
             boxShadow: "0 18px 50px -16px rgba(0,0,0,0.8)",
           }}
         >
-          <span className="mb-1 block text-[10px] uppercase tracking-[0.18em] text-[#5b93e0]">
+          <span className="block text-[10px] uppercase tracking-[0.18em] text-[#5b93e0]">
             ✦ Influence
+          </span>
+          <span className="mb-1 mt-0.5 block font-display text-[14px] text-ink">
+            {linkTip.title}
           </span>
           {linkTip.note}
         </div>

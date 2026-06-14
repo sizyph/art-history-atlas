@@ -22,7 +22,8 @@ export type CeilingKind =
   | "flat"
   | "vault" // barrel-vaulted with a skylight ridge (Orsay)
   | "clerestory" // bright slot of daylight near the top (Chiba)
-  | "beam"; // dark timber beams (Nezu)
+  | "beam" // dark timber beams (Nezu)
+  | "industrial"; // exposed pipes, ducts and track lighting (HongKun)
 
 export type IntroKind =
   | "placard" // dim, read the left-wall placard, then turn to the room
@@ -65,6 +66,7 @@ export type Museum = {
   floor: FloorKind;
   floorColor: string;
   shoji?: boolean; // glowing paper screens (Nezu)
+  portal?: boolean; // an arched opening to an adjoining room (HongKun)
 
   // atmosphere / light
   bg: string;
@@ -247,41 +249,42 @@ export const MUSEUMS: Museum[] = [
     name: "HongKun Art Museum",
     short: "HongKun",
     blurb: {
-      en: "A theatrical black box — board-formed concrete, a glass floor of shadow, hard contemporary light.",
-      fr: "Une boîte noire théâtrale — béton brut, sol d'ombre, lumière contemporaine tranchée.",
-      ja: "劇場のような黒い箱——打ち放しコンクリート、影の床、硬質な現代の光。",
+      en: "A bright white-cube in a converted factory — exposed ducts and track lights, polished concrete, an arched portal.",
+      fr: "Un white-cube lumineux dans une usine réhabilitée — gaines apparentes et rails de spots, béton poli, une arche.",
+      ja: "改装された工場の明るいホワイトキューブ——剥き出しの配管とスポットレール、磨かれたコンクリート、アーチの開口。",
     },
-    roomWidth: 10,
-    wallHeight: 5.4,
-    wall: "#1d1e21",
-    wallKind: "concrete",
-    wallRoughness: 0.82,
-    ceiling: "#0a0a0c",
-    ceilingKind: "flat",
+    roomWidth: 10.5,
+    wallHeight: 5.2,
+    wall: "#eceae6",
+    wallKind: "plaster",
+    wallRoughness: 0.97,
+    ceiling: "#34363a",
+    ceilingKind: "industrial",
     floor: "concrete",
-    floorColor: "#141417",
-    bg: "#08080a",
-    fogColor: "#08080a",
-    fogNear: 8,
-    fogFar: 40,
-    ambient: 0.18,
-    hemiSky: "#23252b",
-    hemiGround: "#050506",
-    hemiIntensity: 0.3,
-    ceilLightColor: "#cfd6e0",
-    ceilLightIntensity: 2,
-    exposure: 1.14,
-    bloom: 0.5,
-    bloomThreshold: 0.66,
-    vignette: 0.8,
-    pictureLight: { color: "#ffffff", intensity: 32, angle: 0.62, show: true },
-    intro: "spotlight",
-    signature: "#d94a3d",
+    floorColor: "#54565a",
+    portal: true,
+    bg: "#dadbdc",
+    fogColor: "#dfe0e1",
+    fogNear: 18,
+    fogFar: 66,
+    ambient: 0.72,
+    hemiSky: "#f4f5f7",
+    hemiGround: "#9a9ca0",
+    hemiIntensity: 0.72,
+    ceilLightColor: "#ffffff",
+    ceilLightIntensity: 5,
+    exposure: 1.02,
+    bloom: 0.3,
+    bloomThreshold: 0.82,
+    vignette: 0.34,
+    pictureLight: { color: "#ffffff", intensity: 13, angle: 0.82, show: true },
+    intro: "daylight",
+    signature: "#4a4e54",
     accentFromPeriod: false,
     frame: "contemporary",
     descMount: "placard",
     desc: {
-      panel: "#161719",
+      panel: "#1b1c1e",
       ink: "#f0f1f3",
       body: "#c7c9cd",
       sub: "#9a9da3",
