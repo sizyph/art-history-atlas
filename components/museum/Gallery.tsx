@@ -406,14 +406,26 @@ function PaintingFrame({
       h = w / aspect;
     }
   }
-  const fh = h + (prof.mat + prof.border) * 2;
+  // Smaller paintings get a wider, deeper frame — more moulding to catch the
+  // picture light and give an easily-overlooked work its presence on the wall.
+  const size = Math.max(w, h);
+  const sizeFactor = Math.min(Math.max(1.3 / size, 0.8), 1.9);
+  const fprof: FrameProfile =
+    sizeFactor === 1
+      ? prof
+      : {
+          ...prof,
+          border: prof.border * sizeFactor,
+          depth: prof.depth * (1 + (sizeFactor - 1) * 0.45),
+        };
+  const fh = h + (fprof.mat + fprof.border) * 2;
 
   return (
     <group
       position={[hang.position[0], hang.position[1] + yOffset, hang.position[2]]}
       rotation={hang.rotation}
     >
-      <Moulding w={w} h={h} prof={prof} />
+      <Moulding w={w} h={h} prof={fprof} />
       {/* canvas */}
       <mesh
         position={[0, 0, 0.045]}
@@ -433,7 +445,7 @@ function PaintingFrame({
         (() => {
           const plateW = 0.5;
           const plateH = (plateW * 170) / 512;
-          const x = w / 2 + prof.mat + prof.border + 0.1 + plateW / 2;
+          const x = w / 2 + fprof.mat + fprof.border + 0.1 + plateW / 2;
           const y = -h / 2 + plateH / 2;
           return (
             <mesh position={[x, y, 0.02]}>
