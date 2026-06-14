@@ -424,6 +424,8 @@ export default function Constellation({
     const el = wrapRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      // let the Explore panel's list scroll instead of zooming the background
+      if ((e.target as HTMLElement)?.closest?.("[data-scroll-list]")) return;
       e.preventDefault();
       interacted.current = true;
       setFlying(false);

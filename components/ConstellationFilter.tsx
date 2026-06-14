@@ -97,6 +97,7 @@ export default function ConstellationFilter({
       {open && (
         <div
           ref={panelRef}
+          data-scroll-list
           className="absolute left-1/2 top-12 w-[320px] -translate-x-1/2 overflow-hidden rounded-2xl border border-line"
           style={{
             background: "rgba(20,17,12,0.96)",
