@@ -381,18 +381,38 @@ function PaintingFrame({
         ? hang.p.width / hang.p.height
         : 1.3;
 
-  const maxH = 1.9;
-  const maxW = 2.7;
-  let h = maxH;
-  let w = h * aspect;
-  if (w > maxW) {
-    w = maxW;
-    h = w / aspect;
+  // Real-world scale (dimensions are stored in centimetres → metres), gently
+  // clamped so the tiniest sketches stay visible and the largest canvases don't
+  // crowd or clip the wall — relative sizes are preserved in between.
+  let w: number;
+  let h: number;
+  let yOffset = 0;
+  if (hang.p.width && hang.p.height) {
+    const rw = hang.p.width / 100;
+    const rh = hang.p.height / 100;
+    const longest = Math.max(rw, rh);
+    const k = Math.min(Math.max(longest, 0.45), 3.3) / longest;
+    w = rw * k;
+    h = rh * k;
+    // lift tall canvases so their bottom rests just above the floor
+    yOffset = Math.max(0, h / 2 + 0.25 - EYE);
+  } else {
+    const maxH = 1.9;
+    const maxW = 2.7;
+    h = maxH;
+    w = h * aspect;
+    if (w > maxW) {
+      w = maxW;
+      h = w / aspect;
+    }
   }
   const fh = h + (prof.mat + prof.border) * 2;
 
   return (
-    <group position={hang.position} rotation={hang.rotation}>
+    <group
+      position={[hang.position[0], hang.position[1] + yOffset, hang.position[2]]}
+      rotation={hang.rotation}
+    >
       <Moulding w={w} h={h} prof={prof} />
       {/* canvas */}
       <mesh
