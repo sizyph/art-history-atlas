@@ -29,6 +29,9 @@ const en: Dict = {
   noWorksBody:
     "No public-domain works for {name} are on Wikimedia Commons yet, so there’s no gallery to walk. Their biography still lives on the timeline.",
   wikipedia: "Wikipedia",
+  keyDates: "Key dates",
+  born: "Born",
+  died: "Died",
 };
 
 const fr: Dict = {
@@ -51,6 +54,9 @@ const fr: Dict = {
   noWorksBody:
     "Aucune œuvre de {name} dans le domaine public n’est encore sur Wikimedia Commons ; il n’y a donc pas de galerie à parcourir. Sa biographie demeure sur la frise.",
   wikipedia: "Wikipédia",
+  keyDates: "Repères",
+  born: "Naissance",
+  died: "Décès",
 };
 
 const ja: Dict = {
@@ -73,6 +79,9 @@ const ja: Dict = {
   noWorksBody:
     "{name}のパブリックドメイン作品はまだウィキメディア・コモンズにないため、巡れるギャラリーはありません。略歴はタイムラインでご覧いただけます。",
   wikipedia: "ウィキペディア",
+  keyDates: "略年譜",
+  born: "生誕",
+  died: "死去",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

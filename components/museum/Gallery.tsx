@@ -288,7 +288,13 @@ function Player({
   return null;
 }
 
-function Controls({ didDrag }: { didDrag: React.RefObject<boolean> }) {
+function Controls({
+  didDrag,
+  enabled,
+}: {
+  didDrag: React.RefObject<boolean>;
+  enabled: React.RefObject<boolean>;
+}) {
   const { camera, gl } = useThree();
   const dragging = useRef(false);
   const last = useRef({ x: 0, y: 0 });
@@ -303,12 +309,16 @@ function Controls({ didDrag }: { didDrag: React.RefObject<boolean> }) {
     el.style.touchAction = "none";
 
     const down = (e: PointerEvent) => {
+      if (!enabled.current) return;
       dragging.current = true;
       didDrag.current = false;
+      // re-sync from the live camera (the intro may have rotated it)
+      yaw.current = camera.rotation.y;
+      pitch.current = camera.rotation.x;
       last.current = { x: e.clientX, y: e.clientY };
     };
     const move = (e: PointerEvent) => {
-      if (!dragging.current) return;
+      if (!enabled.current || !dragging.current) return;
       const dx = e.clientX - last.current.x;
       const dy = e.clientY - last.current.y;
       last.current = { x: e.clientX, y: e.clientY };
@@ -333,7 +343,64 @@ function Controls({ didDrag }: { didDrag: React.RefObject<boolean> }) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [camera, gl, didDrag]);
+  }, [camera, gl, didDrag, enabled]);
+
+  return null;
+}
+
+const INTRO_READ = 1.7; // seconds dwelling on the placard
+const INTRO_TURN = 1.4; // seconds turning to face the gallery
+
+// During the entry, dim + turn the camera toward the left-wall placard, then
+// turn right to the gallery as the lights (tone-mapping exposure) come up.
+function IntroCamera({
+  active,
+  onTurning,
+  onDone,
+}: {
+  active: boolean;
+  onTurning: () => void;
+  onDone: () => void;
+}) {
+  const { camera, gl } = useThree();
+  const start = useRef<number | null>(null);
+  const turned = useRef(false);
+  const done = useRef(false);
+
+  useFrame((state) => {
+    if (!active || done.current) return;
+    if (start.current === null) {
+      start.current = state.clock.elapsedTime;
+      gl.toneMappingExposure = 0.4; // open dim
+      camera.rotation.y = 0.08;
+    }
+    const e = state.clock.elapsedTime - start.current;
+
+    let targetYaw: number;
+    let targetExp: number;
+    if (e < INTRO_READ) {
+      targetYaw = 0.5; // turned left toward the placard
+      targetExp = 0.42;
+    } else {
+      targetYaw = 0; // face down the gallery
+      targetExp = 1.12;
+      if (!turned.current) {
+        turned.current = true;
+        onTurning();
+      }
+    }
+
+    camera.rotation.y += (targetYaw - camera.rotation.y) * 0.07;
+    gl.toneMappingExposure +=
+      (targetExp - gl.toneMappingExposure) * 0.05;
+
+    if (e > INTRO_READ + INTRO_TURN) {
+      done.current = true;
+      camera.rotation.y = 0;
+      gl.toneMappingExposure = 1.12;
+      onDone();
+    }
+  });
 
   return null;
 }
@@ -367,26 +434,185 @@ class TexBoundary extends Component<
   }
 }
 
+function WallPlacard({
+  artist,
+  period,
+  keyDates,
+  accent,
+  phase,
+}: {
+  artist: Artist;
+  period: Period | null;
+  keyDates: { year: number; label: string }[];
+  accent: string;
+  phase: number;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const name =
+    localized(locale, artist.i18n, "name", artist.name) ?? artist.name;
+  const dates =
+    artist.birthYear != null || artist.deathYear != null
+      ? `${artist.birthYear ?? "?"} – ${artist.deathYear ?? "?"}`
+      : null;
+  const sub = [
+    localized(locale, artist.i18n, "nationality", artist.nationality),
+    period ? periodName(locale, period.name) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const bio = localized(locale, artist.i18n, "bio", artist.bio);
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-y-0 left-0 z-30 flex items-center"
+      style={{
+        opacity: phase === 0 ? 1 : 0,
+        transform: phase === 0 ? "translateX(0)" : "translateX(-48px)",
+        transition:
+          "opacity 0.7s ease, transform 1.25s cubic-bezier(0.4,0,0.2,1)",
+      }}
+    >
+      <div
+        className="m-6 w-[360px] overflow-hidden rounded-xl border border-line p-6"
+        style={{
+          background: "rgba(20,16,11,0.93)",
+          backdropFilter: "blur(2px)",
+          WebkitBackdropFilter: "blur(2px)",
+          boxShadow: `0 30px 80px -20px rgba(0,0,0,0.85), 0 0 0 1px ${accent}22`,
+        }}
+      >
+        <div
+          className="-mx-6 -mt-6 mb-5"
+          style={{
+            height: 3,
+            background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
+          }}
+        />
+        <div className="flex gap-4">
+          {artist.portraitUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={artist.portraitUrl}
+              alt=""
+              className="h-[112px] w-[86px] rounded object-cover"
+              style={{ border: "1px solid #38322A" }}
+            />
+          )}
+          <div className="min-w-0">
+            <h2 className="font-display text-2xl leading-tight text-ink">
+              {name}
+            </h2>
+            {dates && (
+              <div
+                className="mt-1 font-display text-sm"
+                style={{ color: accent }}
+              >
+                {dates}
+              </div>
+            )}
+            {sub && (
+              <div className="mt-1.5 text-[10px] uppercase tracking-[0.16em] text-ink-soft">
+                {sub}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {bio && (
+          <p
+            className="mt-4 text-[12.5px] leading-relaxed text-ink-soft"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 5,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {bio}
+          </p>
+        )}
+
+        {keyDates.length > 0 && (
+          <div className="mt-5">
+            <div
+              className="mb-2.5 text-[10px] uppercase tracking-[0.2em]"
+              style={{ color: accent }}
+            >
+              {t("keyDates")}
+            </div>
+            <ul className="space-y-2 border-l border-line pl-4">
+              {keyDates.map((d, i) => (
+                <li key={i} className="relative flex gap-3 text-[12.5px]">
+                  <span
+                    className="absolute -left-[18px] top-1.5 h-1.5 w-1.5 rounded-full"
+                    style={{ background: accent }}
+                  />
+                  <span className="w-9 shrink-0 font-display tabular-nums text-ink-faint">
+                    {d.year}
+                  </span>
+                  <span className="text-ink-soft">{d.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Gallery({
   artist,
   period,
   paintings,
+  intro = false,
 }: {
   artist: Artist;
   period: Period | null;
   paintings: Painting[];
+  intro?: boolean;
 }) {
   const { hangs, depth } = useHangs(paintings);
   const accent = period?.color ?? "#c9a24b";
   const t = useT();
   const { locale } = useLocale();
   const [inspect, setInspect] = useState<Painting | null>(null);
-  const moving = useRef(true);
+  const [phase, setPhase] = useState<0 | 1 | 2>(intro ? 0 : 2);
+  const moving = useRef(!intro);
+  const looking = useRef(!intro);
   const didDrag = useRef(false);
 
   useEffect(() => {
-    moving.current = !inspect;
-  }, [inspect]);
+    moving.current = phase === 2 && !inspect;
+    looking.current = phase === 2;
+  }, [phase, inspect]);
+
+  const keyDates = useMemo(() => {
+    const works = paintings
+      .filter((p) => p.year != null)
+      .sort((a, b) => (a.year as number) - (b.year as number));
+    const picks: Painting[] = [];
+    if (works.length) {
+      const idxs =
+        works.length <= 3
+          ? works.map((_, i) => i)
+          : [0, Math.floor(works.length / 2), works.length - 1];
+      for (const i of idxs) picks.push(works[i]);
+    }
+    const items: { year: number; label: string }[] = [];
+    if (artist.birthYear != null)
+      items.push({ year: artist.birthYear, label: t("born") });
+    for (const p of picks)
+      items.push({
+        year: p.year as number,
+        label: localized(locale, p.i18n, "title", p.title) ?? p.title,
+      });
+    if (artist.deathYear != null)
+      items.push({ year: artist.deathYear, label: t("died") });
+    return items.sort((a, b) => a.year - b.year);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paintings, artist, locale]);
 
   const onInspect = (p: Painting) => {
     if (didDrag.current) return;
@@ -438,7 +664,14 @@ export default function Gallery({
         ))}
 
         <Player depth={depth} enabled={moving} />
-        <Controls didDrag={didDrag} />
+        <Controls didDrag={didDrag} enabled={looking} />
+        {intro && (
+          <IntroCamera
+            active={phase < 2}
+            onTurning={() => setPhase(1)}
+            onDone={() => setPhase(2)}
+          />
+        )}
 
         <EffectComposer>
           <Bloom
@@ -453,6 +686,30 @@ export default function Gallery({
 
       {/* fade in from black */}
       <FadeIn />
+
+      {/* intro: the gallery sits dim + blurred behind a left-wall placard,
+          then clears as the camera turns to face the room */}
+      {phase < 2 && (
+        <div
+          className="pointer-events-none absolute inset-0 z-20"
+          style={{
+            backdropFilter: phase === 0 ? "blur(7px)" : "blur(0px)",
+            WebkitBackdropFilter: phase === 0 ? "blur(7px)" : "blur(0px)",
+            background: phase === 0 ? "rgba(10,8,6,0.4)" : "rgba(10,8,6,0)",
+            transition:
+              "backdrop-filter 1.3s ease, -webkit-backdrop-filter 1.3s ease, background 1.3s ease",
+          }}
+        />
+      )}
+      {phase < 2 && (
+        <WallPlacard
+          artist={artist}
+          period={period}
+          keyDates={keyDates}
+          accent={accent}
+          phase={phase}
+        />
+      )}
 
       {/* top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-6">
@@ -475,7 +732,7 @@ export default function Gallery({
         </div>
       </div>
 
-      {!inspect && <HintBanner />}
+      {phase === 2 && !inspect && <HintBanner />}
 
       {inspect && (
         <InspectOverlay

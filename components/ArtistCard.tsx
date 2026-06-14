@@ -21,7 +21,10 @@ export default function ArtistCard({
 
   const startEnter = () => {
     setEntering(true);
-    window.setTimeout(() => router.push(`/museum/${artist.slug}`), 700);
+    window.setTimeout(
+      () => router.push(`/museum/${artist.slug}?intro=1`),
+      760,
+    );
   };
 
   useEffect(() => {
@@ -193,18 +196,27 @@ export default function ArtistCard({
       </div>
 
       {entering && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden bg-black">
-          {artist.portraitUrl ? (
+        <div className="fixed inset-0 z-[60] overflow-hidden">
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `radial-gradient(circle at 28% 46%, ${artist.periodColor}, #2a190d 32%, #140c06 72%)`,
+              animation: "waterFill 0.82s cubic-bezier(0.5,0,0.7,1) forwards",
+            }}
+          />
+          {artist.portraitUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={artist.portraitUrl}
               alt=""
-              className="h-[150px] w-[116px] object-cover"
+              className="absolute h-[150px] w-[116px] object-cover"
               style={{
-                animation: "dollyIn 0.72s cubic-bezier(0.6,0,0.85,1) forwards",
+                left: "28%",
+                top: "46%",
+                animation: "portraitDissolve 0.82s ease forwards",
               }}
             />
-          ) : null}
+          )}
         </div>
       )}
     </div>
