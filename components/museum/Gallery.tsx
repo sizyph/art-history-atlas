@@ -12,7 +12,12 @@ import {
 import Link from "next/link";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial, useTexture } from "@react-three/drei";
-import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
+import {
+  Bloom,
+  DepthOfField,
+  EffectComposer,
+  Vignette,
+} from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
@@ -435,6 +440,38 @@ function IntroCamera({
   return null;
 }
 
+// Eye-like focus: keep whatever sits at screen-centre sharp and let the depth-
+// of-field blur everything nearer/farther (and, with it, the periphery).
+function EyeFocus({
+  dofRef,
+}: {
+  dofRef: React.RefObject<{ target: THREE.Vector3 } | null>;
+}) {
+  const { camera, scene } = useThree();
+  const ray = useRef(new THREE.Raycaster());
+  const dir = useRef(new THREE.Vector3());
+  const fp = useRef(new THREE.Vector3(0, EYE, 0));
+  const tp = useRef(new THREE.Vector3());
+  const center = useRef(new THREE.Vector2(0, 0));
+  useFrame(() => {
+    const dof = dofRef.current;
+    if (!dof) return;
+    ray.current.setFromCamera(center.current, camera);
+    const hit = ray.current
+      .intersectObjects(scene.children, true)
+      .find((h) => h.distance > 0.3);
+    if (hit) {
+      tp.current.copy(hit.point);
+    } else {
+      camera.getWorldDirection(dir.current);
+      tp.current.copy(camera.position).addScaledVector(dir.current, 6);
+    }
+    fp.current.lerp(tp.current, 0.25);
+    dof.target = fp.current;
+  });
+  return null;
+}
+
 function FallbackFrame({ hang, accent }: { hang: Hang; accent: string }) {
   return (
     <group position={hang.position} rotation={hang.rotation}>
@@ -688,6 +725,8 @@ export default function Gallery({
   const moving = useRef(!intro);
   const looking = useRef(!intro);
   const didDrag = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dofRef = useRef<any>(null);
 
   useEffect(() => {
     moving.current = phase === 2 && !inspect;
@@ -785,8 +824,15 @@ export default function Gallery({
             onDone={() => setPhase(2)}
           />
         )}
+        <EyeFocus dofRef={dofRef} />
 
         <EffectComposer>
+          <DepthOfField
+            ref={dofRef}
+            bokehScale={2.2}
+            focusRange={0.006}
+            focalLength={0.02}
+          />
           <Bloom
             intensity={0.5}
             luminanceThreshold={0.62}
