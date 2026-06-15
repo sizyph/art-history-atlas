@@ -16,6 +16,9 @@ config({ path: ".env.local" });
 import { PERIODS } from "../lib/curated";
 
 const DRY = process.argv.includes("--dry");
+const ONLY = (
+  process.argv.find((a) => a.startsWith("--only="))?.split("=")[1] ?? ""
+).toLowerCase();
 const UA = "ArtHistoryAtlas/0.1 (https://github.com/; steepening@gmail.com)";
 const WDQS = "https://query.wikidata.org/sparql";
 const MAX_PAINTINGS = 12;
@@ -135,6 +138,7 @@ type RawPainting = {
   qid: string;
   title: string;
   year: number | null;
+  sitelinks: number;
   imageBase: string;
   articleTitle: string;
   articleUrl: string;
@@ -147,8 +151,9 @@ type RawPainting = {
 };
 
 async function paintingsFor(qid: string): Promise<RawPainting[]> {
-  const q = `SELECT ?p ?pLabel ?year ?image ?article ?mediumLabel ?genreLabel ?locationLabel ?collectionLabel ?height ?width WHERE {
+  const q = `SELECT ?p ?pLabel ?year ?image ?article ?sitelinks ?mediumLabel ?genreLabel ?locationLabel ?collectionLabel ?height ?width WHERE {
     ?p wdt:P170 wd:${qid} ; wdt:P31/wdt:P279* wd:Q3305213 ; wdt:P18 ?image .
+    ?p wikibase:sitelinks ?sitelinks .
     ?article schema:about ?p ; schema:isPartOf <https://en.wikipedia.org/> .
     OPTIONAL { ?p wdt:P571 ?date. BIND(YEAR(?date) AS ?year) }
     OPTIONAL { ?p wdt:P186 ?medium. }
@@ -158,7 +163,7 @@ async function paintingsFor(qid: string): Promise<RawPainting[]> {
     OPTIONAL { ?p wdt:P2048 ?height. }
     OPTIONAL { ?p wdt:P2049 ?width. }
     SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-  } ORDER BY ?year`;
+  } ORDER BY DESC(?sitelinks)`;
   const rows = await sparql(q);
 
   const byId = new Map<string, RawPainting>();
@@ -173,6 +178,7 @@ async function paintingsFor(qid: string): Promise<RawPainting[]> {
       qid: pid,
       title: r.pLabel?.value ?? articleTitle,
       year: r.year?.value ? parseInt(r.year.value, 10) : null,
+      sitelinks: r.sitelinks?.value ? parseInt(r.sitelinks.value, 10) : 0,
       imageBase: r.image.value.replace(/^http:/, "https:"),
       articleTitle,
       articleUrl,
@@ -198,15 +204,63 @@ async function paintingsFor(qid: string): Promise<RawPainting[]> {
     return true;
   });
 
-  // Dated works first (chronological), undated last.
-  list.sort((a, b) => {
-    if (a.year == null && b.year == null) return 0;
-    if (a.year == null) return 1;
-    if (b.year == null) return -1;
-    return a.year - b.year;
+  // Most-notable first: rank by Wikidata sitelink count (how many language
+  // Wikipedias cover the work) — a robust proxy for fame, so each gallery shows
+  // the artist's canonical works rather than the earliest dated ones.
+  list.sort((a, b) => b.sitelinks - a.sitelinks);
+
+  // Resolution floor: drop low-resolution scans. Check a buffer of top
+  // candidates, then keep the most-notable high-res works up to the cap.
+  const candidates = list.slice(0, MAX_PAINTINGS + 8);
+  const sizes = await imageSizes(candidates.map((c) => c.imageBase));
+  const RES_FLOOR = 1200; // px on the longest side — drops only true thumbnails
+  const good = candidates.filter((c) => {
+    const s = sizes.get(normName(commonsName(c.imageBase)));
+    return !s || Math.max(s.w, s.h) >= RES_FLOOR; // keep if high-res or unknown
   });
 
-  return list.slice(0, MAX_PAINTINGS);
+  return (good.length >= MAX_PAINTINGS ? good : candidates).slice(
+    0,
+    MAX_PAINTINGS,
+  );
+}
+
+const normName = (s: string) =>
+  decodeURIComponent(s).replace(/_/g, " ").trim().toLowerCase();
+
+// Original pixel dimensions of Commons files, batched via the imageinfo API.
+async function imageSizes(
+  imageBases: string[],
+): Promise<Map<string, { w: number; h: number }>> {
+  const out = new Map<string, { w: number; h: number }>();
+  const names = imageBases.map(commonsName);
+  for (let i = 0; i < names.length; i += 40) {
+    const titles = names
+      .slice(i, i + 40)
+      .map((n) => `File:${n}`)
+      .join("|");
+    const url =
+      `https://commons.wikimedia.org/w/api.php?action=query&format=json` +
+      `&prop=imageinfo&iiprop=size&titles=${encodeURIComponent(titles)}`;
+    try {
+      const d = await fetchJson(url);
+      const pages = d?.query?.pages ?? {};
+      for (const pg of Object.values(pages) as any[]) {
+        const ii = pg.imageinfo?.[0];
+        const title: string | undefined = pg.title;
+        if (ii?.width && title) {
+          out.set(normName(title.replace(/^File:/, "")), {
+            w: ii.width,
+            h: ii.height,
+          });
+        }
+      }
+    } catch {
+      /* size unknown for this batch → those works are kept */
+    }
+    await sleep(200);
+  }
+  return out;
 }
 
 function buildFacts(p: RawPainting): string[] {
@@ -294,6 +348,7 @@ async function main() {
 
     for (let ai = 0; ai < period.artists.length; ai++) {
       const title = period.artists[ai];
+      if (ONLY && !title.toLowerCase().includes(ONLY)) continue;
       const ent = await resolveEntity(title);
       if (!ent) {
         console.log(`  ! could not resolve "${title}"`);
@@ -304,6 +359,9 @@ async function main() {
       report.push({ period: period.name, artist: ent.title, n: paints.length });
       const mark = paints.length < MIN_PAINTINGS ? "⚠︎" : " ";
       console.log(`  ${mark} ${ent.title.padEnd(28)} ${paints.length} paintings`);
+      if (ONLY)
+        for (const p of paints)
+          console.log(`       · ${p.title} (${p.sitelinks} wikis, ${p.year ?? "—"})`);
 
       if (DRY) continue;
 
