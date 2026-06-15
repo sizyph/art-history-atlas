@@ -12,6 +12,7 @@
     "ingest": "tsx scripts/ingest.ts",
     "ingest:dry": "tsx scripts/ingest.ts --dry",
     "translate": "tsx scripts/translate.ts",
+    "translate-fill": "tsx scripts/translate-fill.ts",
     "links": "tsx scripts/links.ts"
   },
   "dependencies": {
