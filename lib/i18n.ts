@@ -44,6 +44,9 @@ const en: Dict = {
   share: "Share",
   linkCopied: "Link copied",
   listen: "Listen",
+  influencedBy: "Influenced by",
+  influenceOn: "Influence on",
+  doorwayHint: "Walk to the far wall — doorways lead to kindred galleries",
 };
 
 const fr: Dict = {
@@ -81,6 +84,9 @@ const fr: Dict = {
   share: "Partager",
   linkCopied: "Lien copié",
   listen: "Écouter",
+  influencedBy: "Influencé par",
+  influenceOn: "Influence sur",
+  doorwayHint: "Marchez vers le fond — les portes mènent aux galeries parentes",
 };
 
 const ja: Dict = {
@@ -118,6 +124,9 @@ const ja: Dict = {
   share: "共有",
   linkCopied: "リンクをコピーしました",
   listen: "聴く",
+  influencedBy: "影響を受けた",
+  influenceOn: "影響を与えた",
+  doorwayHint: "奥の壁へ進むと、つながる画家のギャラリーへの扉があります",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

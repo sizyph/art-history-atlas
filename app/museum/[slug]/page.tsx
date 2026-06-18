@@ -63,7 +63,7 @@ export default async function MuseumPage({
   const data = await getArtistBySlug(slug);
   if (!data) notFound();
 
-  const { artist, period, paintings } = data;
+  const { artist, period, paintings, neighbors } = data;
 
   if (!paintings.length) {
     return <NoWorks name={artist.name} />;
@@ -79,6 +79,7 @@ export default async function MuseumPage({
       artist={artist}
       period={period ?? null}
       paintings={paintings}
+      neighbors={neighbors}
       intro={intro}
       openWorkId={openWorkId}
     />

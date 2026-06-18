@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial, useTexture } from "@react-three/drei";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { Artist, Painting, Period } from "@/db/schema";
+import type { Neighbor } from "@/lib/data";
 import InspectOverlay from "@/components/museum/InspectOverlay";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
 import MoveStick from "@/components/museum/MoveStick";
@@ -1521,11 +1523,301 @@ function DescriptionWall({
   );
 }
 
+// ── Walkable influence doorways ───────────────────────────────────────────
+// The far wall opens onto the galleries of artists this one shaped or was
+// shaped by — a rounded arch, a glowing passage, the kindred artist's portrait
+// medallion and name. Walk up and step through (click/tap) to travel there.
+
+// Trace a rounded-top arch outline (width w, total height h, base at baseY).
+function archOutline(
+  target: THREE.Shape | THREE.Path,
+  w: number,
+  h: number,
+  baseY: number,
+) {
+  const r = w / 2;
+  target.moveTo(-w / 2, baseY);
+  target.lineTo(-w / 2, baseY + h - r);
+  target.absarc(0, baseY + h - r, r, Math.PI, 0, true);
+  target.lineTo(w / 2, baseY);
+  target.lineTo(-w / 2, baseY);
+}
+
+function makeArchRing(
+  w: number,
+  h: number,
+  border: number,
+  depth: number,
+): THREE.ExtrudeGeometry {
+  const shape = new THREE.Shape();
+  archOutline(shape, w, h, 0);
+  const hole = new THREE.Path();
+  archOutline(hole, w - border * 2, h - border * 2, border);
+  shape.holes.push(hole);
+  const bevelT = Math.min(border * 0.4, depth * 0.55);
+  return new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.02, depth - bevelT),
+    bevelEnabled: true,
+    bevelThickness: bevelT,
+    bevelSize: border * 0.34,
+    bevelSegments: 2,
+    steps: 1,
+  });
+}
+
+function portraitTextureUrl(url: string): string {
+  const at = /width=\d+/.test(url)
+    ? url.replace(/width=\d+/, "width=360")
+    : `${url}${url.includes("?") ? "&" : "?"}width=360`;
+  return `/api/img?u=${encodeURIComponent(at)}`;
+}
+
+// A dark nameplate for the passage: the relation (tag) over the artist's name.
+function makeDoorSign(name: string, tag: string, accent: string): THREE.CanvasTexture {
+  const W = 512;
+  const H = 224;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext("2d")!;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.fillStyle = accent;
+  ctx.font = '600 26px "Inter", system-ui, sans-serif';
+  ctx.textAlign = "center";
+  ctx.letterSpacing = "5px";
+  ctx.fillText(tag.toUpperCase(), W / 2, 44);
+  ctx.letterSpacing = "0px";
+
+  let fs = 58;
+  ctx.fillStyle = "#f3efe6";
+  let lines: string[] = [];
+  for (; fs >= 30; fs -= 3) {
+    ctx.font = `600 ${fs}px "Cormorant Garamond", Georgia, serif`;
+    lines = wrapText(ctx, name, W - 44);
+    if (lines.length <= 2) break;
+  }
+  if (lines.length > 2) lines = lines.slice(0, 2);
+  let y = lines.length === 2 ? 108 : 132;
+  for (const ln of lines) {
+    ctx.fillText(ln, W / 2, y);
+    y += fs + 4;
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// A plain glowing disc — stands in for a portrait that's missing or won't load.
+function MedallionDisc({ r, y, accent }: { r: number; y: number; accent: string }) {
+  return (
+    <mesh position={[0, y, 0.045]}>
+      <circleGeometry args={[r, 48]} />
+      <meshStandardMaterial
+        color="#15110c"
+        emissive={accent}
+        emissiveIntensity={0.14}
+        roughness={0.9}
+      />
+    </mesh>
+  );
+}
+
+// The kindred artist's portrait, as a round medallion. Suspends on its texture.
+function DoorMedallion({
+  url,
+  radius,
+  y,
+  accent,
+}: {
+  url: string;
+  radius: number;
+  y: number;
+  accent: string;
+}) {
+  const tex = useTexture(portraitTextureUrl(url));
+  useEffect(() => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+  }, [tex]);
+  return (
+    <mesh position={[0, y, 0.05]}>
+      <circleGeometry args={[radius, 48]} />
+      <meshStandardMaterial
+        map={tex}
+        roughness={0.7}
+        emissive={accent}
+        emissiveIntensity={0.06}
+      />
+    </mesh>
+  );
+}
+
+function InfluenceDoor({
+  neighbor,
+  position,
+  width,
+  height,
+  onTravel,
+}: {
+  neighbor: Neighbor;
+  position: [number, number, number];
+  width: number;
+  height: number;
+  onTravel: (slug: string) => void;
+  // accent comes from the neighbor's own period colour
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const accent = neighbor.color;
+  const border = Math.min(0.14, width * 0.12);
+  const ring = useMemo(
+    () => makeArchRing(width, height, border, 0.16),
+    [width, height, border],
+  );
+  useEffect(() => () => ring.dispose(), [ring]);
+
+  const name = localized(locale, neighbor.i18n, "name", neighbor.name) ?? neighbor.name;
+  const tag = t(neighbor.direction === "influencer" ? "influencedBy" : "influenceOn");
+  const sign = useMemo(() => makeDoorSign(name, tag, accent), [name, tag, accent]);
+  useEffect(() => () => sign.dispose(), [sign]);
+
+  const [hover, setHover] = useState(false);
+  const lightRef = useRef<THREE.PointLight>(null);
+  useFrame((_, dt) => {
+    const l = lightRef.current;
+    if (l) {
+      const target = hover ? 5.5 : 3.2;
+      l.intensity += (target - l.intensity) * Math.min(1, dt * 6);
+    }
+  });
+
+  const innerW = width - border * 2;
+  const innerH = height - border * 2;
+  const medR = Math.min(innerW * 0.34, 0.34);
+  const medY = border + innerH * 0.66;
+  const signW = Math.min(innerW * 0.96, 1.1);
+  const signH = (signW * 224) / 512;
+
+  return (
+    <group
+      position={position}
+      onClick={(e) => {
+        e.stopPropagation();
+        onTravel(neighbor.slug);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHover(true);
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        setHover(false);
+        document.body.style.cursor = "";
+      }}
+    >
+      {/* glowing passage seen through the arch */}
+      <mesh position={[0, height / 2, -0.02]}>
+        <planeGeometry args={[innerW + 0.04, height]} />
+        <meshStandardMaterial
+          color="#0b0a08"
+          emissive={accent}
+          emissiveIntensity={hover ? 0.5 : 0.32}
+          roughness={1}
+        />
+      </mesh>
+      {/* arch moulding */}
+      <mesh geometry={ring} castShadow receiveShadow>
+        <meshStandardMaterial color={accent} metalness={0.5} roughness={0.42} />
+      </mesh>
+      {/* portrait medallion (with a plain disc if it's missing or fails) */}
+      {neighbor.portraitUrl ? (
+        <TexBoundary fallback={<MedallionDisc r={medR} y={medY} accent={accent} />}>
+          <Suspense fallback={<MedallionDisc r={medR} y={medY} accent={accent} />}>
+            <DoorMedallion
+              url={neighbor.portraitUrl}
+              radius={medR}
+              y={medY}
+              accent={accent}
+            />
+          </Suspense>
+        </TexBoundary>
+      ) : (
+        <MedallionDisc r={medR} y={medY} accent={accent} />
+      )}
+      {/* medallion rim */}
+      <mesh position={[0, medY, 0.035]}>
+        <ringGeometry args={[medR, medR + 0.03, 48]} />
+        <meshStandardMaterial color={accent} metalness={0.6} roughness={0.35} side={THREE.DoubleSide} />
+      </mesh>
+      {/* nameplate */}
+      <mesh position={[0, border + innerH * 0.22, 0.05]}>
+        <planeGeometry args={[signW, signH]} />
+        <meshBasicMaterial map={sign} transparent toneMapped={false} />
+      </mesh>
+      {/* threshold light on the floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0.5]}>
+        <planeGeometry args={[innerW, 1.0]} />
+        <meshBasicMaterial color={accent} transparent opacity={hover ? 0.16 : 0.08} />
+      </mesh>
+      <pointLight
+        ref={lightRef}
+        position={[0, height * 0.5, 0.6]}
+        intensity={3.2}
+        distance={5}
+        decay={2}
+        color={accent}
+      />
+    </group>
+  );
+}
+
+// Lay the doorways out across the far wall, sized to fit however many there are.
+function InfluenceDoors({
+  neighbors,
+  museum,
+  depth,
+  onTravel,
+}: {
+  neighbors: Neighbor[];
+  museum: Museum;
+  depth: number;
+  onTravel: (slug: string) => void;
+}) {
+  const doors = neighbors.slice(0, 6);
+  if (!doors.length) return null;
+  const W = museum.roomWidth;
+  const avail = W - 1.4;
+  const width = Math.max(0.9, Math.min(1.5, avail / doors.length - 0.3));
+  const height = Math.min(width * 1.9, museum.wallHeight - 0.5);
+  const gap = width + Math.min(0.5, (avail - width * doors.length) / Math.max(1, doors.length));
+  const span = gap * (doors.length - 1);
+  const z = -depth / 2 + 0.2;
+  return (
+    <group>
+      {doors.map((n, i) => (
+        <InfluenceDoor
+          key={n.slug}
+          neighbor={n}
+          position={[-span / 2 + i * gap, 0, z]}
+          width={width}
+          height={height}
+          onTravel={onTravel}
+        />
+      ))}
+    </group>
+  );
+}
+
 export default function Gallery({
   museum,
   artist,
   period,
   paintings,
+  neighbors = [],
   intro = false,
   openWorkId = null,
 }: {
@@ -1533,6 +1825,7 @@ export default function Gallery({
   artist: Artist;
   period: Period | null;
   paintings: Painting[];
+  neighbors?: Neighbor[];
   intro?: boolean;
   openWorkId?: number | null;
 }) {
@@ -1562,8 +1855,21 @@ export default function Gallery({
   const didDrag = useRef(false);
   const moveRef = useRef({ x: 0, y: 0 });
   const [coarse, setCoarse] = useState(false);
+  const [traveling, setTraveling] = useState(false);
+  const router = useRouter();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dofRef = useRef<any>(null);
+
+  // step through a doorway into a kindred artist's gallery — fade out, then
+  // navigate (keeping the same museum so the journey stays visually continuous)
+  const travelTo = (slug: string) => {
+    if (traveling || didDrag.current) return;
+    setTraveling(true);
+    window.setTimeout(
+      () => router.push(`/museum/${slug}?intro=1&museum=${museum.id}`),
+      520,
+    );
+  };
 
   // touch devices can't press WASD — show an on-screen joystick instead
   useEffect(() => {
@@ -1718,6 +2024,13 @@ export default function Gallery({
           </TexBoundary>
         ))}
 
+        <InfluenceDoors
+          neighbors={neighbors}
+          museum={museum}
+          depth={depth}
+          onTravel={travelTo}
+        />
+
         <Player
           depth={depth}
           roomWidth={museum.roomWidth}
@@ -1810,7 +2123,23 @@ export default function Gallery({
           onClose={() => setFullscreen(null)}
         />
       )}
+
+      {traveling && <TravelFade />}
     </div>
+  );
+}
+
+function TravelFade() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setOn(true));
+    return () => cancelAnimationFrame(r);
+  }, []);
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-[70] bg-black"
+      style={{ opacity: on ? 1 : 0, transition: "opacity 0.5s ease" }}
+    />
   );
 }
 
