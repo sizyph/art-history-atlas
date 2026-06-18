@@ -22,6 +22,7 @@ import * as THREE from "three";
 import type { Artist, Painting, Period } from "@/db/schema";
 import InspectOverlay from "@/components/museum/InspectOverlay";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
+import MoveStick from "@/components/museum/MoveStick";
 import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
@@ -908,11 +909,13 @@ function Player({
   roomWidth,
   enabled,
   onStep,
+  move,
 }: {
   depth: number;
   roomWidth: number;
   enabled: React.RefObject<boolean>;
   onStep?: () => void;
+  move?: React.RefObject<{ x: number; y: number }>;
 }) {
   const { camera } = useThree();
   const keys = useRef<Record<string, boolean>>({});
@@ -961,9 +964,18 @@ function Player({
     if (keys.current.b) dir.current.sub(front.current);
     if (keys.current.r) dir.current.add(side.current);
     if (keys.current.l) dir.current.sub(side.current);
-    if (dir.current.lengthSq() > 0) {
-      dir.current.normalize();
-      const moved = speed * Math.min(dt, 0.05);
+    // touch joystick (analog): y = forward, x = strafe
+    if (move?.current && (move.current.x || move.current.y)) {
+      dir.current.addScaledVector(front.current, move.current.y);
+      dir.current.addScaledVector(side.current, move.current.x);
+    }
+    let len = dir.current.length();
+    if (len > 0) {
+      if (len > 1) {
+        dir.current.divideScalar(len);
+        len = 1;
+      }
+      const moved = speed * len * Math.min(dt, 0.05);
       camera.position.addScaledVector(dir.current, moved);
       stepAccum.current += moved;
       if (stepAccum.current > 1.7) {
@@ -1015,6 +1027,7 @@ function Controls({
 }) {
   const { camera, gl } = useThree();
   const dragging = useRef(false);
+  const pointerId = useRef<number | null>(null);
   const last = useRef({ x: 0, y: 0 });
   const yaw = useRef(0);
   const pitch = useRef(0);
@@ -1027,8 +1040,9 @@ function Controls({
     el.style.touchAction = "none";
 
     const down = (e: PointerEvent) => {
-      if (!enabled.current) return;
+      if (!enabled.current || dragging.current) return;
       dragging.current = true;
+      pointerId.current = e.pointerId; // only this finger drives the look
       didDrag.current = false;
       // re-sync from the live camera (the intro may have rotated it)
       yaw.current = camera.rotation.y;
@@ -1036,7 +1050,12 @@ function Controls({
       last.current = { x: e.clientX, y: e.clientY };
     };
     const move = (e: PointerEvent) => {
-      if (!enabled.current || !dragging.current) return;
+      if (
+        !enabled.current ||
+        !dragging.current ||
+        e.pointerId !== pointerId.current
+      )
+        return;
       const dx = e.clientX - last.current.x;
       const dy = e.clientY - last.current.y;
       last.current = { x: e.clientX, y: e.clientY };
@@ -1049,8 +1068,11 @@ function Controls({
       camera.rotation.y = yaw.current;
       camera.rotation.x = pitch.current;
     };
-    const up = () => {
-      dragging.current = false;
+    const up = (e: PointerEvent) => {
+      if (e.pointerId === pointerId.current) {
+        dragging.current = false;
+        pointerId.current = null;
+      }
     };
 
     el.addEventListener("pointerdown", down);
@@ -1538,8 +1560,20 @@ export default function Gallery({
   const moving = useRef(!intro);
   const looking = useRef(!intro);
   const didDrag = useRef(false);
+  const moveRef = useRef({ x: 0, y: 0 });
+  const [coarse, setCoarse] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dofRef = useRef<any>(null);
+
+  // touch devices can't press WASD — show an on-screen joystick instead
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const apply = () => setCoarse(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
 
   useEffect(() => {
     moving.current = phase === 2 && !inspect;
@@ -1689,6 +1723,7 @@ export default function Gallery({
           roomWidth={museum.roomWidth}
           enabled={moving}
           onStep={step}
+          move={moveRef}
         />
         <Spatial depth={depth} onFacing={setFacing} onDepth={setDepth} />
         <Controls didDrag={didDrag} enabled={looking} />
@@ -1755,7 +1790,11 @@ export default function Gallery({
         </div>
       </div>
 
-      {phase === 2 && !inspect && <HintBanner />}
+      {phase === 2 && !inspect && <HintBanner touch={coarse} />}
+
+      {coarse && phase === 2 && !inspect && !fullscreen && (
+        <MoveStick move={moveRef} accent={accent} />
+      )}
 
       {inspect && (
         <InspectOverlay
@@ -1792,7 +1831,7 @@ function FadeIn() {
   );
 }
 
-function HintBanner() {
+function HintBanner({ touch }: { touch: boolean }) {
   const t = useT();
   const [hide, setHide] = useState(false);
   useEffect(() => {
@@ -1810,7 +1849,7 @@ function HintBanner() {
       style={{ opacity: hide ? 0 : 1, transition: "opacity 0.6s ease" }}
     >
       <span className="rounded-full border border-white/15 bg-black/45 px-6 py-3 text-[12px] uppercase tracking-[0.25em] text-ink backdrop-blur">
-        {t("museumHint")}
+        {t(touch ? "museumHintTouch" : "museumHint")}
       </span>
     </div>
   );

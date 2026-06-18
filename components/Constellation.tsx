@@ -305,6 +305,17 @@ export default function Constellation({
   const interacted = useRef(false);
   const flyTimer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
+  // multi-touch: live pointers + the pinch baseline captured at two-finger down
+  const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinch = useRef<{
+    dist: number;
+    wx: number;
+    wy: number;
+    scale: number;
+  } | null>(null);
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const touchZoomAt = useRef(0); // suppresses the synthetic dblclick after a tap-zoom
+  const [coarse, setCoarse] = useState(false);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 0.25 });
   const [ready, setReady] = useState(false);
   const [flying, setFlying] = useState(false);
@@ -323,6 +334,15 @@ export default function Constellation({
   useEffect(() => {
     setAudioScene("constellation");
   }, [setAudioScene]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const apply = () => setCoarse(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
 
   const bounds = useMemo(() => {
     let minX = Infinity;
@@ -522,11 +542,58 @@ export default function Constellation({
   const onPointerDown = (e: React.PointerEvent) => {
     interacted.current = true;
     setFlying(false);
-    didDrag.current = false;
-    drag.current = { x: e.clientX, y: e.clientY };
+    // a second finger arriving soon after a tap is the start of a double-tap,
+    // or a pinch — either way, cancel the pending recenter-to-overview
+    if (e.pointerType === "touch") {
+      const lt = lastTap.current;
+      if (
+        performance.now() - lt.t < 300 &&
+        Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 40
+      ) {
+        window.clearTimeout(clickTimer.current);
+      }
+    }
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+
+    if (pointers.current.size === 2) {
+      // begin a pinch: capture the distance and the world point under the
+      // two-finger midpoint, so zoom stays anchored there
+      const [a, b] = [...pointers.current.values()];
+      const rect = wrapRef.current?.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - (rect?.left ?? 0);
+      const my = (a.y + b.y) / 2 - (rect?.top ?? 0);
+      pinch.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        wx: (mx - view.x) / view.scale,
+        wy: (my - view.y) / view.scale,
+        scale: view.scale,
+      };
+      drag.current = null; // a pinch isn't a pan
+      didDrag.current = true; // …nor a tap
+    } else {
+      didDrag.current = false;
+      drag.current = { x: e.clientX, y: e.clientY };
+    }
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pinch.current && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const rect = wrapRef.current?.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - (rect?.left ?? 0);
+      const my = (a.y + b.y) / 2 - (rect?.top ?? 0);
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const p = pinch.current;
+      const ns = Math.min(Math.max((p.scale * dist) / p.dist, 0.14), 4);
+      // keep the captured world point pinned under the moving midpoint
+      setView(clampView({ scale: ns, x: mx - p.wx * ns, y: my - p.wy * ns }));
+      return;
+    }
+
     if (!drag.current) return;
     const dx = e.clientX - drag.current.x;
     const dy = e.clientY - drag.current.y;
@@ -534,8 +601,46 @@ export default function Constellation({
     drag.current = { x: e.clientX, y: e.clientY };
     setView((v) => clampView({ ...v, x: v.x + dx, y: v.y + dy }));
   };
-  const onPointerUp = () => {
+
+  // a pointer leaving or being cancelled: just drop it (no tap/zoom logic — that
+  // belongs to a real lift, and routing leave here would double-count taps)
+  const onPointerCancel = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    if (pointers.current.size === 0) drag.current = null;
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+
+    if (pointers.current.size === 1) {
+      // dropped from a pinch to one finger → resume panning from it
+      const [pt] = [...pointers.current.values()];
+      drag.current = { x: pt.x, y: pt.y };
+      didDrag.current = true;
+      return;
+    }
+    if (pointers.current.size > 0) return;
+
     drag.current = null;
+    // double-tap to zoom in (touch has no reliable dblclick)
+    if (e.pointerType === "touch" && !didDrag.current) {
+      const now = performance.now();
+      const lt = lastTap.current;
+      if (
+        now - lt.t < 300 &&
+        Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 40
+      ) {
+        window.clearTimeout(clickTimer.current); // don't also recenter
+        stepZoom(e.clientX, e.clientY, 1.9);
+        lastTap.current = { t: 0, x: 0, y: 0 };
+        touchZoomAt.current = now; // the browser will synth a dblclick — ignore it
+        didDrag.current = true; // suppress the single-tap overview click
+      } else {
+        lastTap.current = { t: now, x: e.clientX, y: e.clientY };
+      }
+    }
   };
 
   // Double-click to zoom toward the cursor; hold Shift/Alt to zoom back out.
@@ -558,6 +663,9 @@ export default function Constellation({
   };
   const onDoubleClick = (e: React.MouseEvent) => {
     window.clearTimeout(clickTimer.current); // cancel the pending overview
+    // a touch double-tap is handled in onPointerUp; ignore the dblclick the
+    // browser then synthesizes from the two taps (it would zoom a second time)
+    if (performance.now() - touchZoomAt.current < 700) return;
     if ((e.target as HTMLElement).closest("button")) return; // a star/galaxy
     stepZoom(e.clientX, e.clientY, e.shiftKey || e.altKey ? 1 / 1.9 : 1.9);
   };
@@ -574,7 +682,8 @@ export default function Constellation({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
+      onPointerLeave={onPointerCancel}
+      onPointerCancel={onPointerCancel}
       onClick={() => {
         if (didDrag.current) return;
         // wait briefly so a double-click (zoom) doesn't also reset to overview
@@ -587,6 +696,7 @@ export default function Constellation({
       <Starfield view={view} flying={flying} />
 
       <div
+        data-testid="constellation-stage"
         className="absolute left-0 top-0"
         style={{
           width: layout.width,
@@ -871,7 +981,7 @@ export default function Constellation({
       />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-5 text-center text-[11px] uppercase tracking-[0.3em] text-ink-faint">
-        {t("scrollHint")}
+        {t(coarse ? "scrollHintTouch" : "scrollHint")}
       </div>
 
       {selected && (

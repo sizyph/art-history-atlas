@@ -8,6 +8,7 @@ import { useT } from "@/components/LocaleProvider";
 export default function FullscreenButton() {
   const t = useT();
   const [fs, setFs] = useState(false);
+  const [coarse, setCoarse] = useState(false);
 
   useEffect(() => {
     const doc = document as Document & { webkitFullscreenElement?: Element };
@@ -20,6 +21,19 @@ export default function FullscreenButton() {
       document.removeEventListener("webkitfullscreenchange", onChange);
     };
   }, []);
+
+  // On touch devices the gallery's joystick owns the bottom-left corner, and
+  // element-fullscreen is unsupported on iOS anyway — so don't show this there.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const apply = () => setCoarse(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  if (coarse) return null;
 
   const toggle = (e: React.MouseEvent) => {
     e.stopPropagation();

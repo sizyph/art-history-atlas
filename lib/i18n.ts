@@ -27,7 +27,9 @@ const en: Dict = {
   dateUnknown: "Date unknown",
   backConstellation: "Back to the constellation",
   scrollHint: "Scroll to zoom · drag to pan · click a movement",
+  scrollHintTouch: "Pinch to zoom · drag to pan · tap a star",
   museumHint: "Drag to look · WASD to walk · click a painting",
+  museumHintTouch: "Drag to look · joystick to walk · tap a painting",
   noWorksBody:
     "No public-domain works for {name} are on Wikimedia Commons yet, so there’s no gallery to walk. Their biography still lives on the timeline.",
   wikipedia: "Wikipedia",
@@ -62,7 +64,9 @@ const fr: Dict = {
   dateUnknown: "Date inconnue",
   backConstellation: "Retour à la constellation",
   scrollHint: "Molette pour zoomer · glisser pour déplacer · cliquer un mouvement",
+  scrollHintTouch: "Pincer pour zoomer · glisser pour déplacer · toucher une étoile",
   museumHint: "Glisser pour regarder · WASD pour marcher · cliquer un tableau",
+  museumHintTouch: "Glisser pour regarder · joystick pour marcher · toucher un tableau",
   noWorksBody:
     "Aucune œuvre de {name} dans le domaine public n’est encore sur Wikimedia Commons ; il n’y a donc pas de galerie à parcourir. Sa biographie demeure sur la frise.",
   wikipedia: "Wikipédia",
@@ -97,7 +101,9 @@ const ja: Dict = {
   dateUnknown: "制作年不明",
   backConstellation: "星座に戻る",
   scrollHint: "スクロールでズーム · ドラッグで移動 · 様式をクリック",
+  scrollHintTouch: "ピンチで拡大 · ドラッグで移動 · 星をタップ",
   museumHint: "ドラッグで視点 · WASDで移動 · 絵画をクリック",
+  museumHintTouch: "ドラッグで視点 · スティックで移動 · 絵画をタップ",
   noWorksBody:
     "{name}のパブリックドメイン作品はまだウィキメディア・コモンズにないため、巡れるギャラリーはありません。略歴はタイムラインでご覧いただけます。",
   wikipedia: "ウィキペディア",
