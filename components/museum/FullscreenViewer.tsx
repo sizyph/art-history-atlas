@@ -138,7 +138,13 @@ export default function FullscreenViewer({
     }) as const;
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-black">
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black"
+      // the viewer can sit inside the inspector's click-to-close backdrop —
+      // keep clicks (buttons, panning) from bubbling out and closing it
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <svg width="0" height="0" className="absolute">
         <filter id="fsSharpen">
           <feConvolveMatrix
