@@ -37,6 +37,8 @@ const en: Dict = {
   fullscreen: "Full screen",
   exitFullscreen: "Exit full screen",
   maxDefinition: "Max definition",
+  zoomPan: "Scroll to zoom · drag to pan",
+  fit: "Fit",
 };
 
 const fr: Dict = {
@@ -67,6 +69,8 @@ const fr: Dict = {
   fullscreen: "Plein écran",
   exitFullscreen: "Quitter le plein écran",
   maxDefinition: "Définition max",
+  zoomPan: "Molette pour zoomer · glisser pour déplacer",
+  fit: "Ajuster",
 };
 
 const ja: Dict = {
@@ -97,6 +101,8 @@ const ja: Dict = {
   fullscreen: "全画面",
   exitFullscreen: "全画面を終了",
   maxDefinition: "最高精細",
+  zoomPan: "スクロールで拡大 · ドラッグで移動",
+  fit: "全体",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };
