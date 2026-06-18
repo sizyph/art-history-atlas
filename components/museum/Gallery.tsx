@@ -1505,12 +1505,14 @@ export default function Gallery({
   period,
   paintings,
   intro = false,
+  openWorkId = null,
 }: {
   museum: Museum;
   artist: Artist;
   period: Period | null;
   paintings: Painting[];
   intro?: boolean;
+  openWorkId?: number | null;
 }) {
   const descReserve = museum.descMount === "wall" ? 3.6 : 1.9;
   const { hangs, depth, descZ } = useHangs(
@@ -1543,6 +1545,14 @@ export default function Gallery({
     moving.current = phase === 2 && !inspect;
     looking.current = phase === 2;
   }, [phase, inspect]);
+
+  // a shared deep link (?work=<id>) opens straight to that painting
+  useEffect(() => {
+    if (openWorkId == null) return;
+    const w = paintings.find((p) => p.id === openWorkId);
+    if (w) setInspect(w);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openWorkId]);
 
   // standing before a single work → the art view (binaural tone) and that
   // painting's own soundscape; back to the room when you leave it.

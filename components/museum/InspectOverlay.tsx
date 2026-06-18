@@ -34,7 +34,25 @@ export default function InspectOverlay({
 }) {
   const [shown, setShown] = useState(false);
   const [fs, setFs] = useState(false);
+  const [copied, setCopied] = useState(false);
   const t = useT();
+
+  const share = async () => {
+    const url = `${location.origin}${location.pathname}?work=${painting.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: painting.title, url });
+        return;
+      }
+    } catch {
+      return; // user dismissed the native share sheet
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {}
+  };
 
   useEffect(() => {
     const r = requestAnimationFrame(() => setShown(true));
@@ -130,7 +148,28 @@ export default function InspectOverlay({
           )}
 
           <div className="mt-auto flex items-center justify-between gap-3 pt-2 text-[11px] text-ink-faint">
-            <span>{painting.creditLine ?? "Wikimedia Commons"}</span>
+            <button
+              onClick={share}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 transition-colors hover:text-ink-soft"
+              style={{ color: copied ? "var(--gold)" : undefined }}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+              </svg>
+              {copied ? t("linkCopied") : t("share")}
+            </button>
             <div className="flex gap-3">
               {painting.sourceUrl && (
                 <a

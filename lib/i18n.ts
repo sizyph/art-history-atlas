@@ -39,6 +39,8 @@ const en: Dict = {
   maxDefinition: "Max definition",
   zoomPan: "Scroll to zoom · drag to pan",
   fit: "Fit",
+  share: "Share",
+  linkCopied: "Link copied",
 };
 
 const fr: Dict = {
@@ -71,6 +73,8 @@ const fr: Dict = {
   maxDefinition: "Définition max",
   zoomPan: "Molette pour zoomer · glisser pour déplacer",
   fit: "Ajuster",
+  share: "Partager",
+  linkCopied: "Lien copié",
 };
 
 const ja: Dict = {
@@ -103,6 +107,8 @@ const ja: Dict = {
   maxDefinition: "最高精細",
   zoomPan: "スクロールで拡大 · ドラッグで移動",
   fit: "全体",
+  share: "共有",
+  linkCopied: "リンクをコピーしました",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

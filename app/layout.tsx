@@ -18,9 +18,18 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Constellation — An Atlas of Art History",
+  metadataBase: new URL("https://nuit-etoilee.vercel.app"),
+  title: "ars gratia artis — An Atlas of Art History",
   description:
-    "A zoomable star-map of art history and a walkable 3D gallery for every artist. Every fact and painting drawn from Wikipedia and Wikimedia Commons.",
+    "A fancy night walk under the shining masters that illuminate the world's art galleries — a zoomable star-map of art history and a walkable 3D gallery for every master. Every fact and painting from Wikipedia and Wikimedia Commons.",
+  openGraph: {
+    type: "website",
+    siteName: "ars gratia artis",
+    title: "ars gratia artis — An Atlas of Art History",
+    description:
+      "Step through any star into a master's gallery — their real paintings in a 3D museum, zoomable to the brushstroke.",
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({
