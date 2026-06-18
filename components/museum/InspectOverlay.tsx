@@ -46,6 +46,7 @@ export default function InspectOverlay({
   const t = useT();
   const { setDucked } = useAudio();
   const speakingRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const share = async () => {
     const url = `${location.origin}${location.pathname}?work=${painting.id}`;
@@ -82,15 +83,26 @@ export default function InspectOverlay({
     localized(locale, painting.i18n, "title", painting.title) ?? painting.title;
   const story = localized(locale, painting.i18n, "story", painting.story);
 
-  // audio guide: read the story aloud in the current language (browser TTS),
-  // ducking the soundscape while it plays.
-  const speak = () => {
+  // stop any narration (neural audio or browser voice) and un-duck.
+  const stopAll = () => {
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null; // don't let teardown trip the fallback
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    window.speechSynthesis?.cancel();
+    speakingRef.current = false;
+    setSpeaking(false);
+    setDucked(false);
+  };
+
+  // fallback: the browser's own (synthetic) voice, used when the neural audio
+  // guide isn't available (e.g. before the Azure key is configured).
+  const speakBrowser = () => {
     const synth = window.speechSynthesis;
     if (!synth || !story) return;
-    if (speakingRef.current) {
-      synth.cancel(); // onend resets state + un-ducks
-      return;
-    }
     synth.cancel();
     const u = new SpeechSynthesisUtterance(story);
     u.lang = BCP47[locale];
@@ -112,8 +124,40 @@ export default function InspectOverlay({
     synth.speak(u);
   };
 
+  // audio guide: press to hear a natural neural narration of the story (served
+  // from /api/narrate and cached), ducking the soundscape while it plays.
+  const speak = () => {
+    if (!story) return;
+    if (speakingRef.current) {
+      stopAll();
+      return;
+    }
+    speakingRef.current = true;
+    setSpeaking(true);
+    setDucked(true);
+    const el = new Audio(`/api/narrate?id=${painting.id}&lang=${locale}`);
+    audioRef.current = el;
+    let handled = false;
+    const fallback = () => {
+      // run once, and only if this element is still the active one (not stopped
+      // or superseded) — neural guide unavailable, so use the browser voice
+      if (handled || audioRef.current !== el) return;
+      handled = true;
+      audioRef.current = null;
+      speakingRef.current = false;
+      setSpeaking(false);
+      setDucked(false);
+      speakBrowser();
+    };
+    el.onended = stopAll;
+    el.onerror = fallback;
+    el.play().catch(fallback);
+  };
+
   useEffect(() => {
     return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
       window.speechSynthesis?.cancel();
       speakingRef.current = false;
       setSpeaking(false);

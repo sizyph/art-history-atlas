@@ -141,3 +141,18 @@ export async function getAllArtistSlugs(): Promise<string[]> {
   const rows = await db.select({ slug: artists.slug }).from(artists);
   return rows.map((r) => r.slug);
 }
+
+/** Title + story (with translations) for one painting — used by the audio guide. */
+export async function getPaintingById(id: number) {
+  const [p] = await db
+    .select({
+      id: paintings.id,
+      title: paintings.title,
+      story: paintings.story,
+      i18n: paintings.i18n,
+    })
+    .from(paintings)
+    .where(eq(paintings.id, id))
+    .limit(1);
+  return p ?? null;
+}
