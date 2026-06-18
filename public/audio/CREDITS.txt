@@ -8,6 +8,14 @@ crowd.mp3
   Processing: trimmed to a 24s loop, downmixed to mono, loudness-normalised,
   fades added for seamless looping (ffmpeg).
 
+laughter.mp3
+  Source: "approx 800 laughter and clapter" by lonemonk
+  via Wikimedia Commons — https://commons.wikimedia.org/wiki/File:72844_lonemonk_approx-800-laughter-and-clapter-1.wav
+  Licence: CC BY 3.0 — https://creativecommons.org/licenses/by/3.0/
+  Processing: trimmed to ~6s, downmixed to mono, loudness-normalised, fades
+  added (ffmpeg). Layered with the crowd as the vernissage at the entrance.
+
 Everything else in the soundscape (the cosmic pad, room-tone, footsteps,
 binaural tone, and the per-artwork nature sounds — surf, wind, birds, rain,
-fire) is synthesised in-browser with the Web Audio API; no other sample files.
+fire) is synthesised in-browser with the Web Audio API; the crowd and laughter
+above are the only sample files.

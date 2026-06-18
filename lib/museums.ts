@@ -358,7 +358,8 @@ export const MUSEUMS: Museum[] = [
   },
 ];
 
-export const DEFAULT_MUSEUM = MUSEUMS[0];
+export const DEFAULT_MUSEUM =
+  MUSEUMS.find((m) => m.id === "nezu") ?? MUSEUMS[0];
 
 export function getMuseum(id: string | null | undefined): Museum {
   return MUSEUMS.find((m) => m.id === id) ?? DEFAULT_MUSEUM;

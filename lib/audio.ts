@@ -60,6 +60,10 @@ export class AudioEngine {
   private crowdBuf: AudioBuffer | null = null;
   private crowdSrc: AudioBufferSourceNode | null = null;
 
+  // entrance vernissage: a laughter layer + a transient bus to master
+  private entryBuf: AudioBuffer | null = null;
+  private entrySrcs: AudioBufferSourceNode[] = [];
+
   // room-tone (synth)
   private roomToneGain: GainNode;
 
@@ -136,6 +140,7 @@ export class AudioEngine {
     this.artScape.connect(this.artGain);
 
     this.loadCrowd();
+    this.loadLaughter();
   }
 
   // ---- buffers ----------------------------------------------------------
@@ -166,6 +171,14 @@ export class AudioEngine {
       const arr = await res.arrayBuffer();
       this.crowdBuf = await this.ctx.decodeAudioData(arr);
       if (this.started) this.startCrowd();
+    } catch {}
+  }
+
+  private async loadLaughter() {
+    try {
+      const res = await fetch("/audio/laughter.mp3");
+      const arr = await res.arrayBuffer();
+      this.entryBuf = await this.ctx.decodeAudioData(arr);
     } catch {}
   }
 
@@ -372,6 +385,63 @@ export class AudioEngine {
   setDepth(d: number) {
     this.depth = Math.max(0, Math.min(1, d));
     if (this.started) this.applySpatial();
+  }
+
+  // The vernissage at the threshold: a loud, bright crowd (chatter + laughter)
+  // that ducks and muffles as you push through the door into the hush. Runs on
+  // its own transient bus straight to master, so it plays regardless of the
+  // current scene (the entry happens while still in the constellation).
+  enterTransition(durationS = 3.6) {
+    if (!this.started || this.muted) return;
+    const t = this.ctx.currentTime;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(4200, t);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    lp.connect(g);
+    g.connect(this.master);
+
+    const play = (buf: AudioBuffer, gain: number, offset: number) => {
+      const s = this.ctx.createBufferSource();
+      s.buffer = buf;
+      s.loop = true;
+      const sg = this.ctx.createGain();
+      sg.gain.value = gain;
+      s.connect(sg);
+      sg.connect(lp);
+      try {
+        s.start(t, offset % Math.max(0.1, buf.duration - 0.5));
+      } catch {}
+      this.entrySrcs.push(s);
+    };
+    if (this.crowdBuf) play(this.crowdBuf, 0.9, Math.random() * 8);
+    if (this.entryBuf) play(this.entryBuf, 1.0, 0);
+
+    // loud + bright now → ducked + muffled as you cross the threshold
+    g.gain.linearRampToValueAtTime(0.5, t + 0.06);
+    g.gain.linearRampToValueAtTime(0.5, t + durationS * 0.5);
+    g.gain.linearRampToValueAtTime(0.09, t + durationS);
+    g.gain.linearRampToValueAtTime(0.0001, t + durationS + 0.8);
+    lp.frequency.linearRampToValueAtTime(4200, t + durationS * 0.45);
+    lp.frequency.linearRampToValueAtTime(470, t + durationS);
+
+    const stopAt = t + durationS + 1.0;
+    const dead = this.entrySrcs;
+    this.entrySrcs = [];
+    for (const s of dead) {
+      try {
+        s.stop(stopAt);
+      } catch {}
+    }
+    window.setTimeout(
+      () => {
+        try {
+          g.disconnect();
+        } catch {}
+      },
+      (durationS + 1.4) * 1000,
+    );
   }
 
   step() {

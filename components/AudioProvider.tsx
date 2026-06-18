@@ -23,6 +23,7 @@ type AudioCtx = {
   step: () => void;
   setArtwork: (s: ArtSubject | null) => void;
   setDucked: (d: boolean) => void;
+  enterMuseum: () => void;
 };
 
 const Ctx = createContext<AudioCtx>({
@@ -37,6 +38,7 @@ const Ctx = createContext<AudioCtx>({
   step: () => {},
   setArtwork: () => {},
   setDucked: () => {},
+  enterMuseum: () => {},
 });
 
 export function AudioProvider({ children }: { children: ReactNode }) {
@@ -116,6 +118,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setDucked(d);
   }, []);
 
+  const enterMuseum = useCallback(() => {
+    engineRef.current?.enterTransition();
+  }, []);
+
   return (
     <Ctx.Provider
       value={{
@@ -130,6 +136,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         step,
         setArtwork,
         setDucked,
+        enterMuseum,
       }}
     >
       {children}

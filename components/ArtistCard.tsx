@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { StarArtist } from "@/lib/timeline";
 import { useLocale, useT } from "@/components/LocaleProvider";
+import { useAudio } from "@/components/AudioProvider";
+import EntryDoor from "@/components/EntryDoor";
 import { localized, periodName } from "@/lib/i18n";
 import { MUSEUMS, getMuseum } from "@/lib/museums";
 
@@ -16,18 +18,23 @@ export default function ArtistCard({
 }) {
   const [shown, setShown] = useState(false);
   const [entering, setEntering] = useState(false);
-  const [museumId, setMuseumId] = useState("default");
+  const [museumId, setMuseumId] = useState("nezu");
   const router = useRouter();
   const t = useT();
   const { locale } = useLocale();
+  const { enterMuseum } = useAudio();
   const selMuseum = getMuseum(museumId);
   const enterColor = selMuseum.signature;
 
+  // Press the threshold: the presentation card becomes the entrance door and is
+  // pushed inward; a loud vernissage greets you and muffles as you cross. The
+  // gallery's own intro takes over once we navigate.
   const startEnter = () => {
     setEntering(true);
+    enterMuseum();
     window.setTimeout(
       () => router.push(`/museum/${artist.slug}?intro=1&museum=${museumId}`),
-      760,
+      3950,
     );
   };
 
@@ -237,28 +244,16 @@ export default function ArtistCard({
       </div>
 
       {entering && (
-        <div className="fixed inset-0 z-[60] overflow-hidden">
-          <div
-            className="absolute inset-0"
-            style={{
-              background: `radial-gradient(circle at 28% 46%, ${enterColor}, #2a190d 32%, #140c06 72%)`,
-              animation: "waterFill 0.82s cubic-bezier(0.5,0,0.7,1) forwards",
-            }}
-          />
-          {artist.portraitUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={artist.portraitUrl}
-              alt=""
-              className="absolute h-[150px] w-[116px] object-cover"
-              style={{
-                left: "28%",
-                top: "46%",
-                animation: "portraitDissolve 0.82s ease forwards",
-              }}
-            />
-          )}
-        </div>
+        <EntryDoor
+          portraitUrl={artist.portraitUrl}
+          name={displayName}
+          dates={dates}
+          sub={sub}
+          bio={displayBio ?? t("biographyUnavailable")}
+          birthYear={artist.birthYear}
+          deathYear={artist.deathYear}
+          accent={enterColor}
+        />
       )}
     </div>
   );

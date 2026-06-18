@@ -74,27 +74,5 @@ body {
   transform: scale(1.7);
 }
 
-/* Entering the museum: warm umber floods outward from the portrait like
-   spreading water, while the portrait swells and dissolves into it. */
-@keyframes waterFill {
-  from {
-    clip-path: circle(7% at 28% 46%);
-    opacity: 0.92;
-  }
-  to {
-    clip-path: circle(165% at 50% 50%);
-    opacity: 1;
-  }
-}
-@keyframes portraitDissolve {
-  0% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-    filter: brightness(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(2.6);
-    filter: brightness(1.4) blur(3px);
-  }
-}
+/* The museum-entry transition lives in components/EntryDoor.tsx, animated via
+   the Web Animations API — no CSS keyframes needed. */
