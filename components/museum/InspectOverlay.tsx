@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Painting } from "@/db/schema";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { localized } from "@/lib/i18n";
+import { useAudio } from "@/components/AudioProvider";
+import { localized, type Locale } from "@/lib/i18n";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
+
+const BCP47: Record<Locale, string> = {
+  en: "en-US",
+  fr: "fr-FR",
+  ja: "ja-JP",
+};
 
 function ExpandIcon() {
   return (
@@ -35,7 +42,10 @@ export default function InspectOverlay({
   const [shown, setShown] = useState(false);
   const [fs, setFs] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const t = useT();
+  const { setDucked } = useAudio();
+  const speakingRef = useRef(false);
 
   const share = async () => {
     const url = `${location.origin}${location.pathname}?work=${painting.id}`;
@@ -71,6 +81,45 @@ export default function InspectOverlay({
   const title =
     localized(locale, painting.i18n, "title", painting.title) ?? painting.title;
   const story = localized(locale, painting.i18n, "story", painting.story);
+
+  // audio guide: read the story aloud in the current language (browser TTS),
+  // ducking the soundscape while it plays.
+  const speak = () => {
+    const synth = window.speechSynthesis;
+    if (!synth || !story) return;
+    if (speakingRef.current) {
+      synth.cancel(); // onend resets state + un-ducks
+      return;
+    }
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(story);
+    u.lang = BCP47[locale];
+    u.rate = 0.96;
+    const v = synth
+      .getVoices()
+      .find((x) => x.lang?.toLowerCase().startsWith(locale));
+    if (v) u.voice = v;
+    const done = () => {
+      speakingRef.current = false;
+      setSpeaking(false);
+      setDucked(false);
+    };
+    u.onend = done;
+    u.onerror = done;
+    speakingRef.current = true;
+    setSpeaking(true);
+    setDucked(true);
+    synth.speak(u);
+  };
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+      speakingRef.current = false;
+      setSpeaking(false);
+      setDucked(false);
+    };
+  }, [painting, setDucked]);
 
   return (
     <div
@@ -127,6 +176,33 @@ export default function InspectOverlay({
               {painting.location ? ` · ${painting.location}` : ""}
             </div>
           </div>
+
+          {story && (
+            <button
+              onClick={speak}
+              className="inline-flex w-fit items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors"
+              style={{
+                borderColor: speaking ? accent : "var(--line)",
+                color: speaking ? accent : "var(--ink-soft)",
+                background: speaking ? `${accent}1f` : "transparent",
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                stroke="none"
+              >
+                {speaking ? (
+                  <rect x="6" y="6" width="12" height="12" rx="1.5" />
+                ) : (
+                  <path d="M8 5v14l11-7z" />
+                )}
+              </svg>
+              {t("listen")}
+            </button>
+          )}
 
           {story && (
             <p className="text-[14px] leading-relaxed text-ink-soft">

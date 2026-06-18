@@ -41,6 +41,7 @@ const en: Dict = {
   fit: "Fit",
   share: "Share",
   linkCopied: "Link copied",
+  listen: "Listen",
 };
 
 const fr: Dict = {
@@ -75,6 +76,7 @@ const fr: Dict = {
   fit: "Ajuster",
   share: "Partager",
   linkCopied: "Lien copié",
+  listen: "Écouter",
 };
 
 const ja: Dict = {
@@ -109,6 +111,7 @@ const ja: Dict = {
   fit: "全体",
   share: "共有",
   linkCopied: "リンクをコピーしました",
+  listen: "聴く",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

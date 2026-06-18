@@ -80,6 +80,7 @@ export class AudioEngine {
   private depth = 0; // 0 = at the door, 1 = deep in the room
   private volume = 0.55;
   private muted = false;
+  private ducked = false;
   private started = false;
   private bellTimer = 0;
 
@@ -599,22 +600,25 @@ export class AudioEngine {
   }
 
   // ---- controls ---------------------------------------------------------
+  private applyMaster() {
+    const target = this.muted ? 0 : this.volume * (this.ducked ? 0.22 : 1);
+    this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.08);
+  }
+
   setVolume(v: number) {
     this.volume = Math.max(0, Math.min(1, v));
-    this.master.gain.setTargetAtTime(
-      this.muted ? 0 : this.volume,
-      this.ctx.currentTime,
-      0.05,
-    );
+    this.applyMaster();
   }
 
   setMuted(m: boolean) {
     this.muted = m;
-    this.master.gain.setTargetAtTime(
-      m ? 0 : this.volume,
-      this.ctx.currentTime,
-      0.05,
-    );
+    this.applyMaster();
+  }
+
+  // lower the soundscape while a narration plays over it
+  setDucked(d: boolean) {
+    this.ducked = d;
+    this.applyMaster();
   }
 
   dispose() {

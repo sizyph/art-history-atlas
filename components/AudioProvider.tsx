@@ -22,6 +22,7 @@ type AudioCtx = {
   setDepth: (d: number) => void;
   step: () => void;
   setArtwork: (s: ArtSubject | null) => void;
+  setDucked: (d: boolean) => void;
 };
 
 const Ctx = createContext<AudioCtx>({
@@ -35,6 +36,7 @@ const Ctx = createContext<AudioCtx>({
   setDepth: () => {},
   step: () => {},
   setArtwork: () => {},
+  setDucked: () => {},
 });
 
 export function AudioProvider({ children }: { children: ReactNode }) {
@@ -110,6 +112,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setArtwork(s);
   }, []);
 
+  const setDucked = useCallback((d: boolean) => {
+    engineRef.current?.setDucked(d);
+  }, []);
+
   return (
     <Ctx.Provider
       value={{
@@ -123,6 +129,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         setDepth,
         step,
         setArtwork,
+        setDucked,
       }}
     >
       {children}
