@@ -104,6 +104,10 @@ export default function FullscreenViewer({
       viewer = OpenSeadragon({
         element: hostRef.current,
         tileSources: { type: "legacy-image-pyramid", levels },
+        // OSD 6's default WebGL drawer mis-maps its GL viewport here (the image
+        // renders small in the top-left) — the 2D canvas drawer is reliable and
+        // plenty fast for a single deep-zoom image.
+        drawer: "canvas",
         crossOriginPolicy: "Anonymous",
         showNavigationControl: false,
         showZoomControl: false,
@@ -117,9 +121,13 @@ export default function FullscreenViewer({
         gestureSettingsTouch: { pinchToZoom: true, flickEnabled: true },
       });
       viewerRef.current = viewer;
-      viewer.addHandler("open", () => {
+      // reveal only once the image is actually painted (not merely "open", which
+      // fires on metadata) — and on failure, so the spinner never hangs
+      const reveal = () => {
         if (!cancelled) setLoading(false);
-      });
+      };
+      viewer.addHandler("tile-drawn", reveal);
+      viewer.addHandler("open-failed", reveal);
     })();
     return () => {
       cancelled = true;
