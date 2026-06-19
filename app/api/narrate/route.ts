@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { getPaintingById } from "@/lib/data";
+import { getArtistById, getPaintingById } from "@/lib/data";
 import { localized, LOCALES, type Locale } from "@/lib/i18n";
 import { synthesize, ttsConfigured } from "@/lib/tts";
 
@@ -22,8 +22,9 @@ function audio(buf: Buffer): Response {
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const id = Number(sp.get("id"));
+  const artistId = Number(sp.get("artist"));
   const lang = (sp.get("lang") || "en") as Locale;
-  if (!id || !LOCALES.includes(lang)) {
+  if ((!id && !artistId) || !LOCALES.includes(lang)) {
     return new Response("bad request", { status: 400 });
   }
   // No key yet → tell the client to use its browser-voice fallback.
@@ -31,14 +32,22 @@ export async function GET(req: NextRequest) {
     return new Response("audio guide not configured", { status: 503 });
   }
 
-  const cacheKey = `${id}:${lang}`;
+  const cacheKey = artistId ? `a${artistId}:${lang}` : `${id}:${lang}`;
   const hit = mem.get(cacheKey);
   if (hit) return audio(hit);
 
-  const p = await getPaintingById(id);
-  if (!p) return new Response("not found", { status: 404 });
-  const text = localized(lang, p.i18n, "story", p.story);
-  if (!text) return new Response("no story", { status: 404 });
+  // an artist's biography, or a painting's story
+  let text: string | null;
+  if (artistId) {
+    const a = await getArtistById(artistId);
+    if (!a) return new Response("not found", { status: 404 });
+    text = localized(lang, a.i18n, "bio", a.bio);
+  } else {
+    const p = await getPaintingById(id);
+    if (!p) return new Response("not found", { status: 404 });
+    text = localized(lang, p.i18n, "story", p.story);
+  }
+  if (!text) return new Response("no text", { status: 404 });
 
   try {
     const buf = await synthesize(text, lang);

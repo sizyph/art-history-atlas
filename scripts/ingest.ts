@@ -21,7 +21,7 @@ const ONLY = (
 ).toLowerCase();
 const UA = "ArtHistoryAtlas/0.1 (https://github.com/; steepening@gmail.com)";
 const WDQS = "https://query.wikidata.org/sparql";
-const MAX_PAINTINGS = 12;
+const MAX_PAINTINGS = 18;
 const MIN_PAINTINGS = 8;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

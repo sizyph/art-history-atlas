@@ -1,17 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Painting } from "@/db/schema";
 import { useLocale, useT } from "@/components/LocaleProvider";
-import { useAudio } from "@/components/AudioProvider";
-import { localized, type Locale } from "@/lib/i18n";
+import { localized } from "@/lib/i18n";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
-
-const BCP47: Record<Locale, string> = {
-  en: "en-US",
-  fr: "fr-FR",
-  ja: "ja-JP",
-};
+import GuideButton from "@/components/museum/GuideButton";
 
 function ExpandIcon() {
   return (
@@ -42,11 +36,7 @@ export default function InspectOverlay({
   const [shown, setShown] = useState(false);
   const [fs, setFs] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
   const t = useT();
-  const { setDucked } = useAudio();
-  const speakingRef = useRef(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const share = async () => {
     const url = `${location.origin}${location.pathname}?work=${painting.id}`;
@@ -82,88 +72,6 @@ export default function InspectOverlay({
   const title =
     localized(locale, painting.i18n, "title", painting.title) ?? painting.title;
   const story = localized(locale, painting.i18n, "story", painting.story);
-
-  // stop any narration (neural audio or browser voice) and un-duck.
-  const stopAll = () => {
-    if (audioRef.current) {
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null; // don't let teardown trip the fallback
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    window.speechSynthesis?.cancel();
-    speakingRef.current = false;
-    setSpeaking(false);
-    setDucked(false);
-  };
-
-  // fallback: the browser's own (synthetic) voice, used when the neural audio
-  // guide isn't available (e.g. before the Azure key is configured).
-  const speakBrowser = () => {
-    const synth = window.speechSynthesis;
-    if (!synth || !story) return;
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(story);
-    u.lang = BCP47[locale];
-    u.rate = 0.96;
-    const v = synth
-      .getVoices()
-      .find((x) => x.lang?.toLowerCase().startsWith(locale));
-    if (v) u.voice = v;
-    const done = () => {
-      speakingRef.current = false;
-      setSpeaking(false);
-      setDucked(false);
-    };
-    u.onend = done;
-    u.onerror = done;
-    speakingRef.current = true;
-    setSpeaking(true);
-    setDucked(true);
-    synth.speak(u);
-  };
-
-  // audio guide: press to hear a natural neural narration of the story (served
-  // from /api/narrate and cached), ducking the soundscape while it plays.
-  const speak = () => {
-    if (!story) return;
-    if (speakingRef.current) {
-      stopAll();
-      return;
-    }
-    speakingRef.current = true;
-    setSpeaking(true);
-    setDucked(true);
-    const el = new Audio(`/api/narrate?id=${painting.id}&lang=${locale}`);
-    audioRef.current = el;
-    let handled = false;
-    const fallback = () => {
-      // run once, and only if this element is still the active one (not stopped
-      // or superseded) — neural guide unavailable, so use the browser voice
-      if (handled || audioRef.current !== el) return;
-      handled = true;
-      audioRef.current = null;
-      speakingRef.current = false;
-      setSpeaking(false);
-      setDucked(false);
-      speakBrowser();
-    };
-    el.onended = stopAll;
-    el.onerror = fallback;
-    el.play().catch(fallback);
-  };
-
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      window.speechSynthesis?.cancel();
-      speakingRef.current = false;
-      setSpeaking(false);
-      setDucked(false);
-    };
-  }, [painting, setDucked]);
 
   return (
     <div
@@ -222,30 +130,11 @@ export default function InspectOverlay({
           </div>
 
           {story && (
-            <button
-              onClick={speak}
-              className="inline-flex w-fit items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors"
-              style={{
-                borderColor: speaking ? accent : "var(--line)",
-                color: speaking ? accent : "var(--ink-soft)",
-                background: speaking ? `${accent}1f` : "transparent",
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                stroke="none"
-              >
-                {speaking ? (
-                  <rect x="6" y="6" width="12" height="12" rx="1.5" />
-                ) : (
-                  <path d="M8 5v14l11-7z" />
-                )}
-              </svg>
-              {t("listen")}
-            </button>
+            <GuideButton
+              params={{ id: painting.id }}
+              text={story}
+              accent={accent}
+            />
           )}
 
           {story && (

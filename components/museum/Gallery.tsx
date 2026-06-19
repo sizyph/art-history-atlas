@@ -35,6 +35,7 @@ import {
   frameProfile,
   type DescPalette,
   type FrameProfile,
+  type HangStrategy,
   type Museum,
 } from "@/lib/museums";
 import { makeWood, makeConcrete, makeStone } from "@/components/museum/textures";
@@ -47,9 +48,9 @@ function wallTextureUrl(p: Painting) {
   return `/api/img?u=${encodeURIComponent(src)}`;
 }
 
-function zPositions(count: number): number[] {
-  const start = (-(count - 1) / 2) * SPACING;
-  return Array.from({ length: count }, (_, i) => start + i * SPACING);
+function zPositions(count: number, spacing = SPACING): number[] {
+  const start = (-(count - 1) / 2) * spacing;
+  return Array.from({ length: count }, (_, i) => start + i * spacing);
 }
 
 type Hang = {
@@ -58,26 +59,75 @@ type Hang = {
   rotation: [number, number, number];
 };
 
+// Centre the most important item (items[0]) in the middle of a wall, the next
+// ones flanking it outward — the symmetric Salon hang.
+function centerOut<T>(items: T[]): T[] {
+  const out: T[] = [];
+  items.forEach((it, i) => (i % 2 === 0 ? out.push(it) : out.unshift(it)));
+  return out;
+}
+
+// Curate the chosen works onto the two side walls according to the museum's
+// hang strategy, returning the two walls' lists plus the spacing between works.
+function arrangeHang(
+  paintings: Painting[],
+  hang: HangStrategy,
+): { left: Painting[]; right: Painting[]; spacing: number } {
+  let list = paintings.slice();
+  let spacing = SPACING;
+
+  if (hang === "chronological") {
+    list.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+  } else if (hang === "thematic") {
+    // cluster by sonic/visual subject, keeping fame order inside each cluster
+    const groups = new Map<string, Painting[]>();
+    for (const p of list) {
+      const s = classifySubject(`${p.title} ${p.story ?? ""}`);
+      const g = groups.get(s) ?? [];
+      g.push(p);
+      groups.set(s, g);
+    }
+    list = [...groups.values()].flat();
+  } else if (hang === "sparse") {
+    // show fewer, with room to breathe
+    list = list.slice(0, Math.max(4, Math.ceil(list.length * 0.6)));
+    spacing = SPACING * 1.55;
+  }
+
+  if (hang === "salon") {
+    // balance importance across both walls, then centre each wall's masterwork
+    const a: Painting[] = [];
+    const b: Painting[] = [];
+    list.forEach((p, i) => (i % 2 === 0 ? a : b).push(p));
+    return { left: centerOut(a), right: centerOut(b), spacing };
+  }
+
+  // fame / chronological / thematic flow continuously: the first wall (entrance
+  // → back) then the second
+  const perSide = Math.ceil(list.length / 2);
+  return { left: list.slice(0, perSide), right: list.slice(perSide), spacing };
+}
+
 function useHangs(
   paintings: Painting[],
   roomWidth: number,
   descReserve: number,
+  hang: HangStrategy,
 ): {
   hangs: Hang[];
   depth: number;
   descZ: number;
 } {
   return useMemo(() => {
+    const { left, right, spacing } = arrangeHang(paintings, hang);
     const DESC = descReserve; // left-wall length reserved for the description
-    const perSide = Math.ceil(paintings.length / 2);
-    const depth = Math.max(perSide * SPACING + DESC + 3, 16);
+    const perSide = Math.max(left.length, right.length);
+    const depth = Math.max(perSide * spacing + DESC + 3, 16);
     const front = depth / 2;
     const descZ = front - DESC / 2 - 0.7; // description centred near the entrance (left wall)
-    const left = paintings.slice(0, perSide);
-    const right = paintings.slice(perSide);
 
     // right wall: centred along the full wall
-    const rz = zPositions(right.length);
+    const rz = zPositions(right.length, spacing);
     // left wall: paintings begin a clear gap behind the description (so the bio
     // reads as a standalone introduction) and run to the back
     const leftTop = descZ - DESC / 2 - 1.8;
@@ -107,7 +157,7 @@ function useHangs(
       }),
     );
     return { hangs, depth, descZ };
-  }, [paintings, roomWidth, descReserve]);
+  }, [paintings, roomWidth, descReserve, hang]);
 }
 
 // One beveled rectangular moulding (outer rect with a hole) as a single
@@ -1834,6 +1884,7 @@ export default function Gallery({
     paintings,
     museum.roomWidth,
     descReserve,
+    museum.hang,
   );
   const accent = museum.accentFromPeriod
     ? (period?.color ?? museum.signature)

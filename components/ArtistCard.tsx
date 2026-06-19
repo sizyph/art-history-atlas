@@ -6,6 +6,7 @@ import type { StarArtist } from "@/lib/timeline";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
 import EntryDoor from "@/components/EntryDoor";
+import GuideButton from "@/components/museum/GuideButton";
 import { localized, periodName } from "@/lib/i18n";
 import { MUSEUMS, getMuseum } from "@/lib/museums";
 
@@ -156,6 +157,15 @@ export default function ArtistCard({
         />
 
         <div className="px-6 pt-4">
+          {displayBio && (
+            <div className="mb-3">
+              <GuideButton
+                params={{ artist: artist.id }}
+                text={displayBio}
+                accent={artist.periodColor}
+              />
+            </div>
+          )}
           <p
             className="text-[14px] leading-relaxed text-ink-soft"
             style={{

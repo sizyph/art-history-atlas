@@ -38,6 +38,15 @@ export type FrameStrategy =
   | "contemporary" // black floaters / frameless (HongKun)
   | "nihon"; // dark wood + silk mat (Nezu)
 
+// How the chosen works are arranged on the walls — a curatorial decision that
+// can differ per museum (see arrangeHang in the gallery).
+export type HangStrategy =
+  | "fame" // the most celebrated greet you near the entrance (default)
+  | "chronological" // earliest to latest — a walk through the maker's years
+  | "salon" // size hierarchy: the masterwork centred, the rest flanking it
+  | "thematic" // clustered by subject — seascapes, portraits, nights…
+  | "sparse"; // fewer works, wide breathing space — contemplative
+
 export type DescMount = "wall" | "placard" | "scroll";
 
 export type DescPalette = {
@@ -96,6 +105,7 @@ export type Museum = {
   // busyness, so a sparse work gets an elaborate frame and a dense one a plain.
   frameApproach: "uniform" | "contrast";
   frameUniform: number; // fixed richness 0..1 when approach is "uniform"
+  hang: HangStrategy; // how the works are arranged on the walls
   descMount: DescMount;
   desc: DescPalette;
 };
@@ -112,6 +122,7 @@ const DARK_DESC: DescPalette = {
 export const MUSEUMS: Museum[] = [
   {
     id: "default",
+    hang: "salon",
     name: "Constellation Gallery",
     short: "Constellation",
     blurb: {
@@ -155,6 +166,7 @@ export const MUSEUMS: Museum[] = [
 
   {
     id: "orsay",
+    hang: "chronological",
     name: "Musée d'Orsay, Paris",
     short: "Orsay",
     blurb: {
@@ -206,6 +218,7 @@ export const MUSEUMS: Museum[] = [
 
   {
     id: "chiba",
+    hang: "thematic",
     name: "Eco-Friendly Art Museum, Chiba",
     short: "Chiba",
     blurb: {
@@ -257,6 +270,7 @@ export const MUSEUMS: Museum[] = [
 
   {
     id: "hongkun",
+    hang: "thematic",
     name: "HongKun Art Museum",
     short: "HongKun",
     blurb: {
@@ -308,6 +322,7 @@ export const MUSEUMS: Museum[] = [
 
   {
     id: "nezu",
+    hang: "sparse",
     name: "Nezu Museum, Tokyo",
     short: "Nezu",
     blurb: {
@@ -353,6 +368,213 @@ export const MUSEUMS: Museum[] = [
       body: "#cabd9f",
       sub: "#a08e6a",
       faint: "#8c7b59",
+      rule: "accent",
+    },
+  },
+
+  {
+    id: "hermitage",
+    hang: "salon",
+    name: "State Hermitage, St. Petersburg",
+    short: "Hermitage",
+    blurb: {
+      en: "A Winter Palace state room — malachite-green walls, parquet underfoot, gilded Salon frames beneath a vaulted ceiling.",
+      fr: "Une salle d'apparat du Palais d'Hiver — murs vert malachite, parquet, cadres dorés sous une voûte.",
+      ja: "冬宮の大広間——孔雀石色の壁、寄木の床、ヴォールト天井の下に金の額縁。",
+    },
+    roomWidth: 11,
+    wallHeight: 6.6,
+    wall: "#1f4034",
+    wallKind: "plaster",
+    wallRoughness: 0.82,
+    ceiling: "#e7dabb",
+    ceilingKind: "vault",
+    floor: "parquet",
+    floorColor: "#6a4527",
+    bg: "#16201b",
+    fogColor: "#18231d",
+    fogNear: 16,
+    fogFar: 60,
+    ambient: 0.66,
+    hemiSky: "#fff2d6",
+    hemiGround: "#3a4a40",
+    hemiIntensity: 0.78,
+    ceilLightColor: "#ffe6b8",
+    ceilLightIntensity: 5,
+    daylight: { color: "#fff3df", intensity: 1.3, pos: [5, 9, 3] },
+    exposure: 1.0,
+    bloom: 0.42,
+    bloomThreshold: 0.7,
+    vignette: 0.42,
+    pictureLight: { color: "#fff0d2", intensity: 18, angle: 0.68, show: true },
+    intro: "daylight",
+    signature: "#c9a24b",
+    accentFromPeriod: true,
+    frame: "salon",
+    frameApproach: "uniform",
+    frameUniform: 0.92,
+    descMount: "wall",
+    desc: {
+      panel: "#16241d",
+      ink: "#f0e6cf",
+      body: "#cdbf9f",
+      sub: "#a99a6e",
+      faint: "#9a8a5e",
+      rule: "accent",
+    },
+  },
+
+  {
+    id: "uffizi",
+    hang: "chronological",
+    name: "Galleria degli Uffizi, Florence",
+    short: "Uffizi",
+    blurb: {
+      en: "A Vasari corridor — warm plaster, a grotesque-frescoed vault, honed stone, gilded frames in Florentine daylight.",
+      fr: "Un couloir de Vasari — enduit chaud, voûte à grotesques, pierre polie, cadres dorés dans la lumière florentine.",
+      ja: "ヴァザーリの回廊——暖かい漆喰、グロテスク文様の天井、磨かれた石、フィレンツェの光に金の額縁。",
+    },
+    roomWidth: 9.5,
+    wallHeight: 6.0,
+    wall: "#c2b08a",
+    wallKind: "plaster",
+    wallRoughness: 0.9,
+    ceiling: "#e3d8bf",
+    ceilingKind: "vault",
+    floor: "stone",
+    floorColor: "#7a5a3e",
+    bg: "#cdbf9c",
+    fogColor: "#d0c3a1",
+    fogNear: 16,
+    fogFar: 60,
+    ambient: 0.8,
+    hemiSky: "#fff5e0",
+    hemiGround: "#7a6a4c",
+    hemiIntensity: 0.9,
+    ceilLightColor: "#fff2d8",
+    ceilLightIntensity: 3,
+    daylight: { color: "#fff6e8", intensity: 1.5, pos: [3, 9, 2] },
+    exposure: 1.0,
+    bloom: 0.34,
+    bloomThreshold: 0.74,
+    vignette: 0.36,
+    pictureLight: { color: "#fff3df", intensity: 14, angle: 0.72, show: true },
+    intro: "daylight",
+    signature: "#b07a3c",
+    accentFromPeriod: true,
+    frame: "salon",
+    frameApproach: "uniform",
+    frameUniform: 0.78,
+    descMount: "wall",
+    desc: {
+      panel: "#efe5cd",
+      ink: "#3a2c18",
+      body: "#52412c",
+      sub: "#7a674a",
+      faint: "#8a7656",
+      rule: "accent",
+    },
+  },
+
+  {
+    id: "gardner",
+    hang: "thematic",
+    name: "Isabella Stewart Gardner, Boston",
+    short: "Gardner",
+    blurb: {
+      en: "A dim Venetian palazzo room — damask-red walls, a carved timber ceiling, works hung close in candle-warm hush.",
+      fr: "Une salle de palais vénitien tamisée — murs de damas rouge, plafond de bois sculpté, œuvres serrées dans une pénombre chaude.",
+      ja: "薄暗いヴェネツィア邸の一室——ダマスク織の赤い壁、彫刻された木の天井、蝋燭色の静けさに寄り添う作品。",
+    },
+    roomWidth: 8.4,
+    wallHeight: 4.6,
+    wall: "#5e2622",
+    wallKind: "plaster",
+    wallRoughness: 0.92,
+    ceiling: "#241a12",
+    ceilingKind: "beam",
+    floor: "stone",
+    floorColor: "#3a2c22",
+    bg: "#1f120e",
+    fogColor: "#1f130d",
+    fogNear: 11,
+    fogFar: 46,
+    ambient: 0.5,
+    hemiSky: "#7a4c38",
+    hemiGround: "#241410",
+    hemiIntensity: 0.58,
+    ceilLightColor: "#ffdcae",
+    ceilLightIntensity: 6,
+    exposure: 1.1,
+    bloom: 0.36,
+    bloomThreshold: 0.66,
+    vignette: 0.66,
+    pictureLight: { color: "#ffe2ba", intensity: 28, angle: 0.64, show: true },
+    intro: "placard",
+    signature: "#b5654a",
+    accentFromPeriod: true,
+    frame: "period",
+    frameApproach: "contrast",
+    frameUniform: 0.5,
+    descMount: "placard",
+    desc: {
+      panel: "#2a1512",
+      ink: "#f0d9c8",
+      body: "#cda994",
+      sub: "#a8806c",
+      faint: "#946d5a",
+      rule: "accent",
+    },
+  },
+
+  {
+    id: "rijksmuseum",
+    hang: "salon",
+    name: "Rijksmuseum, Amsterdam",
+    short: "Rijksmuseum",
+    blurb: {
+      en: "The Gallery of Honour — deep teal-grey walls, a skylit vault, gilded frames marching toward the masterworks.",
+      fr: "La Galerie d'Honneur — murs gris-bleu profond, voûte à verrière, cadres dorés menant aux chefs-d'œuvre.",
+      ja: "名誉のギャラリー——深い青灰色の壁、天窓のヴォールト、傑作へと続く金の額縁。",
+    },
+    roomWidth: 10,
+    wallHeight: 6.2,
+    wall: "#2c3a3c",
+    wallKind: "plaster",
+    wallRoughness: 0.88,
+    ceiling: "#dfd6c4",
+    ceilingKind: "vault",
+    floor: "stone",
+    floorColor: "#4a4036",
+    bg: "#222c2d",
+    fogColor: "#252f30",
+    fogNear: 16,
+    fogFar: 58,
+    ambient: 0.7,
+    hemiSky: "#f2f4ee",
+    hemiGround: "#3e4744",
+    hemiIntensity: 0.82,
+    ceilLightColor: "#fbf6ea",
+    ceilLightIntensity: 4,
+    daylight: { color: "#fdf8ee", intensity: 1.4, pos: [0, 10, 2] },
+    exposure: 1.0,
+    bloom: 0.34,
+    bloomThreshold: 0.74,
+    vignette: 0.4,
+    pictureLight: { color: "#fff4e2", intensity: 15, angle: 0.7, show: true },
+    intro: "daylight",
+    signature: "#c0a050",
+    accentFromPeriod: true,
+    frame: "salon",
+    frameApproach: "uniform",
+    frameUniform: 0.82,
+    descMount: "wall",
+    desc: {
+      panel: "#232d2e",
+      ink: "#eae4d6",
+      body: "#c2bdaf",
+      sub: "#928d7e",
+      faint: "#827d6e",
       rule: "accent",
     },
   },
