@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Painting } from "@/db/schema";
 import { useT } from "@/components/LocaleProvider";
 
@@ -93,6 +94,11 @@ export default function FullscreenViewer({
       if (cancelled || !hostRef.current) return;
 
       const OpenSeadragon = (await import("openseadragon")).default;
+      // OSD 6's drawers mis-handle a device-pixel-ratio > 1 here (the image
+      // renders 2× in the top-left on Retina) — render the canvas at logical
+      // resolution. Detail still comes from the up-to-8000px source pyramid.
+      // (runtime-assignable despite the d.ts marking it read-only)
+      (OpenSeadragon as unknown as { pixelDensityRatio: number }).pixelDensityRatio = 1;
       const widths = [1280, 2560, 5120].filter((w) => w < cap - 200);
       widths.push(cap);
       const levels = widths.map((w) => ({
@@ -145,7 +151,7 @@ export default function FullscreenViewer({
       background: active ? "rgba(201,162,75,0.14)" : "transparent",
     }) as const;
 
-  return (
+  const content = (
     <div
       className="fixed inset-0 z-[70] flex flex-col bg-black"
       // the viewer can sit inside the inspector's click-to-close backdrop —
@@ -211,4 +217,11 @@ export default function FullscreenViewer({
       </button>
     </div>
   );
+
+  // Render at the document root, not inside the inspector's blurred backdrop —
+  // an ancestor backdrop-filter is a separate rasterization context that breaks
+  // the viewer's canvas on Retina (dpr > 1).
+  return typeof document === "undefined"
+    ? null
+    : createPortal(content, document.body);
 }
