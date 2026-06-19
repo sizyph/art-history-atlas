@@ -93,6 +93,11 @@ export default function FullscreenViewer({
       if (cancelled || !hostRef.current) return;
 
       const OpenSeadragon = (await import("openseadragon")).default;
+      // On Retina (dpr > 1) OSD's home/fit zoom comes out wrong — the painting
+      // opens cropped / pinned to a corner. Pin the pixel ratio to 1 so geometry
+      // is correct at every dpr; zoomed-in detail still comes from the up-to-
+      // 8000px source tiles, so it stays crisp. (runtime-assignable; d.ts says ro)
+      (OpenSeadragon as unknown as { pixelDensityRatio: number }).pixelDensityRatio = 1;
       const widths = [1280, 2560, 5120].filter((w) => w < cap - 200);
       widths.push(cap);
       const levels = widths.map((w) => ({
