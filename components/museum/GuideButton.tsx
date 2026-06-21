@@ -22,7 +22,7 @@ export default function GuideButton({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const { setDucked } = useAudio();
+  const { setDucked, muted } = useAudio();
   const [speaking, setSpeaking] = useState(false);
   const speakingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -32,6 +32,22 @@ export default function GuideButton({
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  // muting the site stops any narration already playing
+  useEffect(() => {
+    if (!muted) return;
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    window.speechSynthesis?.cancel();
+    speakingRef.current = false;
+    setSpeaking(false);
+    setDucked(false);
+  }, [muted, setDucked]);
 
   const stopAll = () => {
     if (audioRef.current) {
@@ -110,7 +126,8 @@ export default function GuideButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!text) return null;
+  // Muted site → no audio guide anywhere; the story/bio text is shown alongside.
+  if (!text || muted) return null;
 
   return (
     <div className="flex items-center gap-2.5">

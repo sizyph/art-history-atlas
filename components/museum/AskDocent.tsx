@@ -28,7 +28,7 @@ export default function AskDocent({
 }) {
   const t = useT();
   const { locale } = useLocale();
-  const { setDucked } = useAudio();
+  const { setDucked, muted } = useAudio();
 
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("intro");
@@ -140,7 +140,7 @@ export default function AskDocent({
       setAnswer(data.answer);
       setSources(data.sources ?? []);
       setPhase("answering");
-      if (viaVoice) {
+      if (viaVoice && !muted) {
         setSpeaking(true);
         await speak(data.answer);
         setSpeaking(false);
@@ -250,7 +250,8 @@ export default function AskDocent({
     const g = pool[Math.floor(Math.random() * pool.length)];
     setGreeting(g);
     setPhase("intro");
-    if (supported) {
+    // Voice conversation only when sound is on; muted → chat only (text in/out).
+    if (supported && !muted) {
       await speak(g);
       // unless the visitor started typing meanwhile, open the mic
       if (openRef.current && !abortRef.current && !transcriptRef.current) {
@@ -274,6 +275,19 @@ export default function AskDocent({
     setTranscript("");
     setTyped("");
   };
+
+  // The site mute is the master switch: muting mid-conversation cuts the guide
+  // voice and the mic at once, leaving the exchange as text.
+  useEffect(() => {
+    if (!muted) return;
+    stopAudio();
+    if (recRef.current) {
+      abortRef.current = true;
+      teardownRec(true);
+      if (phase === "listening") setPhase("intro");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [muted]);
 
   useEffect(() => {
     return () => {
@@ -347,7 +361,7 @@ export default function AskDocent({
               placeholder={t("askPlaceholder")}
               className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-white/35"
             />
-            {supported && (
+            {supported && !muted && (
               <button
                 onClick={listening ? stopAndAnswer : startListening}
                 aria-label={listening ? t("askStop") : t("ask")}
@@ -425,20 +439,22 @@ export default function AskDocent({
             >
               {t("askAgain")}
             </button>
-            <button
-              onClick={async () => {
-                if (speaking) {
-                  stopAudio();
-                } else {
-                  setSpeaking(true);
-                  await speak(answer);
-                  setSpeaking(false);
-                }
-              }}
-              className="rounded-full border border-white/15 px-3.5 py-1.5 text-[12px] uppercase tracking-[0.15em] text-ink-soft transition-colors hover:text-ink"
-            >
-              {speaking ? t("askStop") : t("listen")}
-            </button>
+            {!muted && (
+              <button
+                onClick={async () => {
+                  if (speaking) {
+                    stopAudio();
+                  } else {
+                    setSpeaking(true);
+                    await speak(answer);
+                    setSpeaking(false);
+                  }
+                }}
+                className="rounded-full border border-white/15 px-3.5 py-1.5 text-[12px] uppercase tracking-[0.15em] text-ink-soft transition-colors hover:text-ink"
+              >
+                {speaking ? t("askStop") : t("listen")}
+              </button>
+            )}
           </div>
         </div>
       )}
