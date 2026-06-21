@@ -51,6 +51,15 @@ const en: Dict = {
   tourNext: "Next",
   tourEnd: "End tour",
   tourStops: "Jump to a work",
+  ask: "Ask the docent",
+  askPrompt: "What would you like to know?",
+  askListening: "Listening…",
+  askThinking: "Thinking…",
+  askStop: "Stop",
+  askAgain: "Ask again",
+  askPlaceholder: "Ask about art, an artist, a movement…",
+  askError: "I couldn't reach an answer just now. Try again.",
+  askSources: "Sources",
 };
 
 const fr: Dict = {
@@ -95,6 +104,15 @@ const fr: Dict = {
   tourNext: "Suivant",
   tourEnd: "Terminer",
   tourStops: "Aller à une œuvre",
+  ask: "Demander au guide",
+  askPrompt: "Que souhaitez-vous savoir ?",
+  askListening: "À l’écoute…",
+  askThinking: "Réflexion…",
+  askStop: "Arrêter",
+  askAgain: "Reposer une question",
+  askPlaceholder: "Posez une question sur l’art, un artiste, un mouvement…",
+  askError: "Je n’ai pas pu obtenir de réponse. Réessayez.",
+  askSources: "Sources",
 };
 
 const ja: Dict = {
@@ -139,6 +157,15 @@ const ja: Dict = {
   tourNext: "次へ",
   tourEnd: "終了",
   tourStops: "作品へ移動",
+  ask: "ガイドに尋ねる",
+  askPrompt: "何を知りたいですか？",
+  askListening: "聞いています…",
+  askThinking: "考えています…",
+  askStop: "停止",
+  askAgain: "もう一度尋ねる",
+  askPlaceholder: "美術・画家・様式について質問…",
+  askError: "回答を取得できませんでした。もう一度お試しください。",
+  askSources: "出典",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

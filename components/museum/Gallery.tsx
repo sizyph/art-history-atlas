@@ -27,6 +27,7 @@ import FullscreenViewer from "@/components/museum/FullscreenViewer";
 import MoveStick from "@/components/museum/MoveStick";
 import Visitors from "@/components/museum/Visitors";
 import Atmosphere from "@/components/museum/Atmosphere";
+import AskDocent from "@/components/museum/AskDocent";
 import { daylight, skyColor, resetDaylight } from "@/lib/daylight";
 import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
@@ -2281,6 +2282,7 @@ export default function Gallery({
   const [tour, setTour] = useState(false);
   const [tourIdx, setTourIdx] = useState(0);
   const [focusTitle, setFocusTitle] = useState<string | null>(null);
+  const currentWorkRef = useRef<string | null>(null); // work you're before, for Ask context
   const tourActive = useRef(false);
   const tourTarget = useRef<TourStop | null>(null);
   const tourAudio = useRef<HTMLAudioElement | null>(null);
@@ -2324,6 +2326,10 @@ export default function Gallery({
     looking.current = phase === 2 && !tour;
     contemplateOn.current = phase === 2 && !inspect && !fullscreen && !tour;
   }, [phase, inspect, fullscreen, tour]);
+
+  useEffect(() => {
+    currentWorkRef.current = tour ? null : focusTitle;
+  }, [focusTitle, tour]);
 
   // a shared deep link (?work=<id>) opens straight to that painting
   useEffect(() => {
@@ -2789,6 +2795,14 @@ export default function Gallery({
         <FullscreenViewer
           painting={fullscreen}
           onClose={() => setFullscreen(null)}
+        />
+      )}
+
+      {phase === 2 && !inspect && !fullscreen && !tour && (
+        <AskDocent
+          artist={localized(locale, artist.i18n, "name", artist.name) ?? artist.name}
+          museum={museum.name}
+          getWork={() => currentWorkRef.current}
         />
       )}
 
