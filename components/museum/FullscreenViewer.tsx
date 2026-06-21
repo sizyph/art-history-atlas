@@ -57,13 +57,34 @@ async function originalSize(
 export default function FullscreenViewer({
   painting,
   onClose,
+  guideActive = false,
+  guideAudioRef,
+  guidePaused = false,
+  onGuideToggle,
 }: {
   painting: Painting;
   onClose: () => void;
+  guideActive?: boolean;
+  guideAudioRef?: React.RefObject<HTMLAudioElement | null>;
+  guidePaused?: boolean;
+  onGuideToggle?: () => void;
 }) {
   const t = useT();
   const [preset, setPreset] = useState("original");
   const [loading, setLoading] = useState(true);
+  const [guideProgress, setGuideProgress] = useState(0);
+
+  // While a tour narration plays, track how far through the guide's speech we are.
+  useEffect(() => {
+    if (!guideActive) return;
+    const id = window.setInterval(() => {
+      const a = guideAudioRef?.current;
+      if (a && a.duration > 0 && !Number.isNaN(a.duration)) {
+        setGuideProgress(Math.min(1, a.currentTime / a.duration));
+      }
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [guideActive, guideAudioRef]);
   const hostRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const viewerRef = useRef<any>(null);
@@ -214,6 +235,42 @@ export default function FullscreenViewer({
           </div>
         )}
       </div>
+
+      {/* guided-tour: how far through the docent's speech, with pause/play so
+          you can linger on a detail before the tour moves on */}
+      {guideActive && (
+        <div className="flex items-center justify-center gap-3 px-6 pt-4">
+          <button
+            onClick={onGuideToggle}
+            aria-label={guidePaused ? "Resume guide" : "Pause guide"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/20 text-white/85 transition-colors hover:bg-white/10"
+          >
+            {guidePaused ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
+              </svg>
+            )}
+          </button>
+          <div className="relative h-1 w-[min(420px,56vw)] overflow-hidden rounded-full bg-white/15">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{
+                width: `${Math.round(guideProgress * 100)}%`,
+                background: "var(--gold)",
+                transition: "width 0.12s linear",
+              }}
+            />
+          </div>
+          <span className="w-9 text-[11px] tabular-nums text-white/45">
+            {Math.round(guideProgress * 100)}%
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-center gap-2 px-4 pb-7 pt-3">
         {PRESETS.map((p) => (

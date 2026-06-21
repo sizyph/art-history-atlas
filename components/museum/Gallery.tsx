@@ -1031,7 +1031,18 @@ function Player({
       KeyD: "r",
       ArrowRight: "r",
     };
+    // Don't walk while the visitor is typing (e.g. a question to the docent).
+    const typing = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return (
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable)
+      );
+    };
     const down = (e: KeyboardEvent) => {
+      if (typing()) return;
       const k = map[e.code];
       if (k) keys.current[k] = true;
     };
@@ -1039,11 +1050,17 @@ function Player({
       const k = map[e.code];
       if (k) keys.current[k] = false;
     };
+    // focusing a text field drops any movement key still held
+    const onFocusIn = () => {
+      if (typing()) keys.current = {};
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    window.addEventListener("focusin", onFocusIn);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("focusin", onFocusIn);
     };
   }, []);
 
@@ -2281,6 +2298,8 @@ export default function Gallery({
   const tourStops = useMemo(() => buildTourStops(hangs, locale), [hangs, locale]);
   const [tour, setTour] = useState(false);
   const [tourIdx, setTourIdx] = useState(0);
+  const [tourPaused, setTourPaused] = useState(false);
+  const tourPausedRef = useRef(false);
   const [focusTitle, setFocusTitle] = useState<string | null>(null);
   const currentWorkRef = useRef<string | null>(null); // work you're before, for Ask context
   const tourActive = useRef(false);
@@ -2344,7 +2363,9 @@ export default function Gallery({
   // view if you're still standing before the work), so no reset is needed here.
   useEffect(() => {
     const p = inspect ?? fullscreen;
-    if (p) {
+    // During a tour the narration owns the audio; opening deep-zoom shouldn't
+    // swap the scene out from under it.
+    if (p && !tourActive.current) {
       setAudioScene("artview");
       setArtwork(classifySubject(`${p.title} ${p.story ?? ""}`));
     }
@@ -2379,7 +2400,13 @@ export default function Gallery({
   // single click opens the inspector; a quick second click (double-click) on a
   // painting jumps straight to full screen.
   const onInspect = (p: Painting) => {
-    if (didDrag.current || tourActive.current) return;
+    if (didDrag.current) return;
+    // During a tour, a click opens the deep-zoom of the work (the guide keeps
+    // narrating); it auto-closes when the tour moves on.
+    if (tourActive.current) {
+      setFullscreen(p);
+      return;
+    }
     const now = performance.now();
     if (now - lastClick.current < 320) {
       setInspect(null);
@@ -2418,9 +2445,35 @@ export default function Gallery({
     setAudioScene("gallery");
     setTour(false);
     setFocusTitle(null);
+    setFullscreen(null);
+    tourPausedRef.current = false;
+    setTourPaused(false);
     moving.current = true;
     looking.current = true;
     contemplateOn.current = true;
+  }
+
+  // Pause/resume the guide's speech (and the tour's advance) from the deep-zoom
+  // view, so a visitor can linger on a detail before the guide moves on.
+  function toggleGuidePause() {
+    const next = !tourPausedRef.current;
+    tourPausedRef.current = next;
+    setTourPaused(next);
+    if (next) {
+      tourAudio.current?.pause();
+      window.speechSynthesis?.pause();
+      clearTourTimer(); // don't let the safety cap advance while paused
+    } else {
+      window.speechSynthesis?.resume();
+      tourAudio.current?.play().catch(() => {});
+      const gen = tourGen.current;
+      tourTimer.current = window.setTimeout(() => {
+        if (tourActive.current && gen === tourGen.current && !tourPausedRef.current) {
+          stopTourAudio();
+          nextStop();
+        }
+      }, 60000);
+    }
   }
 
   function nextStop() {
@@ -2477,10 +2530,10 @@ export default function Gallery({
     };
     el.onended = finish;
     el.onerror = fallback;
-    el.play().catch(fallback);
-    // hard safety cap against a stalled stream
+    if (!tourPausedRef.current) el.play().catch(fallback);
+    // hard safety cap against a stalled stream (never advances while paused)
     tourTimer.current = window.setTimeout(() => {
-      if (tourActive.current && gen === tourGen.current) {
+      if (tourActive.current && gen === tourGen.current && !tourPausedRef.current) {
         stopTourAudio();
         advance();
       }
@@ -2492,6 +2545,9 @@ export default function Gallery({
     clearTourTimer();
     stopTourAudio();
     setDucked(false);
+    setFullscreen(null); // moving on auto-closes any open deep-zoom
+    tourPausedRef.current = false;
+    setTourPaused(false);
     if (pos < 0 || pos >= tourOrder.current.length) {
       endTour();
       return;
@@ -2794,7 +2850,15 @@ export default function Gallery({
       {fullscreen && (
         <FullscreenViewer
           painting={fullscreen}
-          onClose={() => setFullscreen(null)}
+          onClose={() => {
+            // closing the deep-zoom during a tour resumes the guide and continues
+            if (tourActive.current && tourPausedRef.current) toggleGuidePause();
+            setFullscreen(null);
+          }}
+          guideActive={tour}
+          guideAudioRef={tourAudio}
+          guidePaused={tourPaused}
+          onGuideToggle={toggleGuidePause}
         />
       )}
 
