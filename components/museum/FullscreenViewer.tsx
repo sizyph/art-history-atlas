@@ -282,7 +282,11 @@ export default function FullscreenViewer({
         </div>
       )}
 
+      {/* one control bar along the bottom — full-screen, colour presets, fit,
+          and (asking about this work) the docent — so the frame stays clear */}
       <div className="flex flex-wrap items-center justify-center gap-2 px-4 pb-7 pt-3">
+        <FullscreenButton className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/70 transition-colors hover:text-white" />
+        <span className="mx-1 h-4 w-px bg-white/15" />
         {PRESETS.map((p) => (
           <button
             key={p.key}
@@ -301,6 +305,17 @@ export default function FullscreenViewer({
         >
           {t("fit")}
         </button>
+        {artistName && museumName && (
+          <>
+            <span className="mx-1 h-4 w-px bg-white/15" />
+            <AskDocent
+              artist={artistName}
+              museum={museumName}
+              getWork={() => workTitle}
+              placement="bar"
+            />
+          </>
+        )}
       </div>
 
       <button
@@ -310,19 +325,6 @@ export default function FullscreenViewer({
       >
         ×
       </button>
-
-      {/* browser full-screen toggle (the global one sits behind this overlay) —
-          top-left, mirroring the close button */}
-      <FullscreenButton className="pointer-events-auto absolute left-5 top-4 z-[60] flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white/70 backdrop-blur transition-colors hover:text-white" />
-
-      {/* ask the docent about the work you're studying up close */}
-      {artistName && museumName && (
-        <AskDocent
-          artist={artistName}
-          museum={museumName}
-          getWork={() => workTitle}
-        />
-      )}
     </div>
   );
 }

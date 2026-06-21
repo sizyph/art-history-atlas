@@ -21,10 +21,14 @@ export default function AskDocent({
   artist,
   museum,
   getWork,
+  placement = "edge",
 }: {
   artist: string;
   museum: string;
   getWork: () => string | null;
+  // "edge": floats at the right of the gallery; "bar": an inline trigger that
+  // sits in the deep-zoom's control bar, with the panel popping up above it.
+  placement?: "edge" | "bar";
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -300,26 +304,46 @@ export default function AskDocent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!open) {
-    return (
-      <button
-        onClick={begin}
-        aria-label={t("ask")}
-        title={t("ask")}
-        className="pointer-events-auto absolute right-6 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-ink backdrop-blur transition-colors hover:bg-black/65"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4" />
-          <circle cx="12" cy="18" r="0.6" fill="currentColor" stroke="none" />
-        </svg>
-      </button>
-    );
-  }
-
+  const bar = placement === "bar";
   const listening = phase === "listening";
   const inputStage = phase === "intro" || phase === "listening";
-  return (
-    <div className="pointer-events-auto absolute right-6 top-1/2 z-30 flex w-[360px] max-w-[88vw] -translate-y-1/2 flex-col gap-3 rounded-2xl border border-white/15 bg-black/75 p-4 backdrop-blur">
+
+  const trigger = (
+    <button
+      onClick={bar && open ? close : begin}
+      aria-label={t("ask")}
+      title={t("ask")}
+      className={
+        bar
+          ? "pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border bg-black/30 transition-colors"
+          : "pointer-events-auto absolute right-6 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-ink backdrop-blur transition-colors hover:bg-black/65"
+      }
+      style={
+        bar
+          ? {
+              borderColor: open ? "var(--gold)" : "rgba(255,255,255,0.18)",
+              color: open ? "var(--gold)" : "rgba(255,255,255,0.8)",
+            }
+          : undefined
+      }
+    >
+      <svg width={bar ? 16 : 20} height={bar ? 16 : 20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4" />
+        <circle cx="12" cy="18" r="0.6" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+  );
+
+  if (!open) return trigger;
+
+  const panel = (
+    <div
+      className={
+        bar
+          ? "pointer-events-auto absolute bottom-[86px] right-5 z-[60] flex w-[360px] max-w-[88vw] flex-col gap-3 rounded-2xl border border-white/15 bg-black/80 p-4 backdrop-blur"
+          : "pointer-events-auto absolute right-6 top-1/2 z-30 flex w-[360px] max-w-[88vw] -translate-y-1/2 flex-col gap-3 rounded-2xl border border-white/15 bg-black/75 p-4 backdrop-blur"
+      }
+    >
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-[0.22em] text-ink-faint">
           {t("ask")}
@@ -472,5 +496,16 @@ export default function AskDocent({
         </div>
       )}
     </div>
+  );
+
+  // In the bar, the trigger stays in the control row and the panel floats above
+  // it; at the edge, the panel replaces the floating trigger.
+  return bar ? (
+    <>
+      {trigger}
+      {panel}
+    </>
+  ) : (
+    panel
   );
 }
