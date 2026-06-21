@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Museum } from "@/lib/museums";
+import { daylight, shaftColor } from "@/lib/daylight";
 
 const noRaycast = () => {};
 
@@ -70,6 +71,24 @@ function Shafts({
 }) {
   const tex = useMemo(makeShaftTexture, []);
   const groups = useRef<(THREE.Group | null)[]>([]);
+  const scratch = useRef(new THREE.Color());
+
+  // one shared material for every shaft, tinted live by the daylight state
+  const mat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        map: tex,
+        color: new THREE.Color(color),
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+      }),
+    [tex, color],
+  );
+  useEffect(() => () => mat.dispose(), [mat]);
 
   const shafts = useMemo(() => {
     const out: { x: number; z: number; w: number; phase: number }[] = [];
@@ -91,6 +110,10 @@ function Shafts({
   useFrame((state) => {
     const cam = state.camera;
     const tm = state.clock.elapsedTime;
+    // warm + strengthen the shafts toward golden hour
+    shaftColor(scratch.current);
+    mat.color.copy(scratch.current);
+    mat.opacity = 0.5 * (1 + daylight.warm * 0.5);
     for (let i = 0; i < shafts.length; i++) {
       const g = groups.current[i];
       if (!g) continue;
@@ -111,18 +134,8 @@ function Shafts({
           }}
           position={[s.x, H / 2, s.z]}
         >
-          <mesh raycast={noRaycast}>
+          <mesh material={mat} raycast={noRaycast}>
             <planeGeometry args={[s.w, H * 1.04]} />
-            <meshBasicMaterial
-              map={tex}
-              color={color}
-              transparent
-              opacity={0.5}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              side={THREE.DoubleSide}
-              toneMapped={false}
-            />
           </mesh>
         </group>
       ))}

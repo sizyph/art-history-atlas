@@ -23,6 +23,14 @@ export type ArtSubject =
   | "snow"
   | "quiet";
 
+// A built soundscape (its live nodes + scheduled-event timers) feeding one bus.
+type Scape = {
+  out: GainNode;
+  nodes: AudioScheduledSourceNode[];
+  timers: number[];
+  subject: ArtSubject | null;
+};
+
 // Guess a painting's sonic subject from its title + story.
 export function classifySubject(text: string): ArtSubject {
   const t = text.toLowerCase();
@@ -70,11 +78,14 @@ export class AudioEngine {
   // binaural tone (art view)
   private binauralGain: GainNode;
 
-  // dynamic art soundscape
+  // dynamic art soundscapes — `art` is the full one heard in the art view; `near`
+  // is a faint, panned hint of the nearest work as you roam the gallery.
   private artScape: GainNode;
-  private artNodes: AudioScheduledSourceNode[] = [];
-  private artTimers: number[] = [];
-  private artSubject: ArtSubject | null = null;
+  private nearScape: GainNode;
+  private nearPan: StereoPannerNode;
+  private nearGain: GainNode;
+  private art: Scape;
+  private near: Scape;
 
   // room reverb, its wet level scaled to the hall's size
   private verbSend: GainNode;
@@ -142,6 +153,18 @@ export class AudioEngine {
     this.artScape = this.ctx.createGain();
     this.artScape.gain.value = 0.9;
     this.artScape.connect(this.artGain);
+    this.art = { out: this.artScape, nodes: [], timers: [], subject: null };
+
+    // near-work spatial hint: its soundscape → panner → faint gain → gallery bus
+    this.nearScape = this.ctx.createGain();
+    this.nearScape.gain.value = 1;
+    this.nearPan = this.ctx.createStereoPanner();
+    this.nearGain = this.ctx.createGain();
+    this.nearGain.gain.value = 0.0001;
+    this.nearScape.connect(this.nearPan);
+    this.nearPan.connect(this.nearGain);
+    this.nearGain.connect(this.galleryGain);
+    this.near = { out: this.nearScape, nodes: [], timers: [], subject: null };
 
     // ---- room reverb (parallel wet send off the room + art buses) ----
     this.verbSend = this.ctx.createGain();
@@ -518,38 +541,60 @@ export class AudioEngine {
   }
 
   // ---- the art sings ----------------------------------------------------
+  // The full soundscape heard standing before a work (in the art view).
   setArtwork(subject: ArtSubject | null) {
-    if (subject === this.artSubject) return;
-    this.artSubject = subject;
-    // tear down the previous soundscape
-    for (const n of this.artNodes) {
+    if (subject === this.art.subject) return;
+    this.teardownScape(this.art);
+    this.art.subject = subject;
+    if (subject && subject !== "quiet") this.buildScape(subject, this.art);
+  }
+
+  // The nearest work as you roam: its soundscape, panned to the side it hangs on
+  // and rising as you approach. Faint, and only in the gallery (the art view
+  // already carries the full soundscape).
+  setNearWork(subject: ArtSubject | null, pan: number, level: number) {
+    if (!this.started) return;
+    const t = this.ctx.currentTime;
+    if (subject !== this.near.subject) {
+      this.teardownScape(this.near);
+      this.near.subject = subject;
+      if (subject && subject !== "quiet") this.buildScape(subject, this.near);
+    }
+    this.nearPan.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.15);
+    const eff =
+      this.scene === "gallery" && subject && subject !== "quiet"
+        ? Math.max(0.0001, Math.min(0.4, level))
+        : 0.0001;
+    this.nearGain.gain.setTargetAtTime(eff, t, 0.25);
+  }
+
+  private teardownScape(s: Scape) {
+    for (const n of s.nodes) {
       try {
         n.stop();
       } catch {}
     }
-    this.artNodes = [];
-    for (const id of this.artTimers) window.clearTimeout(id);
-    this.artTimers = [];
-    if (!subject || subject === "quiet") return;
-    this.buildArtScape(subject);
+    s.nodes = [];
+    for (const id of s.timers) window.clearTimeout(id);
+    s.timers = [];
   }
 
-  private noiseSource(buf: AudioBuffer): AudioBufferSourceNode {
+  private noiseInto(buf: AudioBuffer, s: Scape): AudioBufferSourceNode {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
     try {
       src.start(this.ctx.currentTime, Math.random() * 2);
     } catch {}
-    this.artNodes.push(src);
+    s.nodes.push(src);
     return src;
   }
 
-  private buildArtScape(subject: ArtSubject) {
-    const out = this.artScape;
+  private buildScape(subject: ArtSubject, s: Scape) {
+    const out = s.out;
     if (subject === "sea") {
       // surf: low filtered noise with slow swells
-      const src = this.noiseSource(this.pinkBuf);
+      const src = this.noiseInto(this.pinkBuf, s);
       const lp = this.ctx.createBiquadFilter();
       lp.type = "lowpass";
       lp.frequency.value = 520;
@@ -562,13 +607,13 @@ export class AudioEngine {
       lfo.connect(lfoG);
       lfoG.connect(g.gain);
       lfo.start();
-      this.artNodes.push(lfo);
+      s.nodes.push(lfo);
       src.connect(lp);
       lp.connect(g);
       g.connect(out);
     } else if (subject === "landscape") {
       // wind + occasional birdsong
-      const src = this.noiseSource(this.pinkBuf);
+      const src = this.noiseInto(this.pinkBuf, s);
       const bp = this.ctx.createBiquadFilter();
       bp.type = "bandpass";
       bp.frequency.value = 540;
@@ -582,11 +627,11 @@ export class AudioEngine {
       lfo.connect(lfoG);
       lfoG.connect(bp.frequency);
       lfo.start();
-      this.artNodes.push(lfo);
+      s.nodes.push(lfo);
       src.connect(bp);
       bp.connect(g);
       g.connect(out);
-      this.scheduleBird(out);
+      this.scheduleBird(s);
     } else if (subject === "city") {
       // a distant café/boulevard murmur (reuse the crowd, muffled)
       if (this.crowdBuf) {
@@ -604,10 +649,10 @@ export class AudioEngine {
         try {
           src.start(this.ctx.currentTime, Math.random() * 10);
         } catch {}
-        this.artNodes.push(src);
+        s.nodes.push(src);
       }
     } else if (subject === "rain") {
-      const src = this.noiseSource(this.whiteBuf);
+      const src = this.noiseInto(this.whiteBuf, s);
       const hp = this.ctx.createBiquadFilter();
       hp.type = "highpass";
       hp.frequency.value = 1400;
@@ -616,9 +661,9 @@ export class AudioEngine {
       src.connect(hp);
       hp.connect(g);
       g.connect(out);
-      this.scheduleDrip(out);
+      this.scheduleDrip(s);
     } else if (subject === "fire") {
-      const src = this.noiseSource(this.pinkBuf);
+      const src = this.noiseInto(this.pinkBuf, s);
       const lp = this.ctx.createBiquadFilter();
       lp.type = "lowpass";
       lp.frequency.value = 320;
@@ -627,9 +672,9 @@ export class AudioEngine {
       src.connect(lp);
       lp.connect(g);
       g.connect(out);
-      this.scheduleCrackle(out);
+      this.scheduleCrackle(s);
     } else if (subject === "snow") {
-      const src = this.noiseSource(this.pinkBuf);
+      const src = this.noiseInto(this.pinkBuf, s);
       const bp = this.ctx.createBiquadFilter();
       bp.type = "bandpass";
       bp.frequency.value = 1100;
@@ -642,9 +687,10 @@ export class AudioEngine {
     }
   }
 
-  private scheduleBird(out: GainNode) {
+  private scheduleBird(s: Scape) {
+    const out = s.out;
     const tick = () => {
-      if (this.artSubject !== "landscape") return;
+      if (s.subject !== "landscape") return;
       const t = this.ctx.currentTime;
       const o = this.ctx.createOscillator();
       o.type = "sine";
@@ -662,14 +708,15 @@ export class AudioEngine {
       g.connect(out);
       o.start(t);
       o.stop(t + notes * 0.07 + 0.1);
-      this.artTimers.push(window.setTimeout(tick, 1800 + Math.random() * 4500));
+      s.timers.push(window.setTimeout(tick, 1800 + Math.random() * 4500));
     };
-    this.artTimers.push(window.setTimeout(tick, 600 + Math.random() * 1500));
+    s.timers.push(window.setTimeout(tick, 600 + Math.random() * 1500));
   }
 
-  private scheduleDrip(out: GainNode) {
+  private scheduleDrip(s: Scape) {
+    const out = s.out;
     const tick = () => {
-      if (this.artSubject !== "rain") return;
+      if (s.subject !== "rain") return;
       const t = this.ctx.currentTime;
       const o = this.ctx.createOscillator();
       o.type = "sine";
@@ -682,14 +729,15 @@ export class AudioEngine {
       g.connect(out);
       o.start(t);
       o.stop(t + 0.1);
-      this.artTimers.push(window.setTimeout(tick, 120 + Math.random() * 480));
+      s.timers.push(window.setTimeout(tick, 120 + Math.random() * 480));
     };
-    this.artTimers.push(window.setTimeout(tick, 200));
+    s.timers.push(window.setTimeout(tick, 200));
   }
 
-  private scheduleCrackle(out: GainNode) {
+  private scheduleCrackle(s: Scape) {
+    const out = s.out;
     const tick = () => {
-      if (this.artSubject !== "fire") return;
+      if (s.subject !== "fire") return;
       const t = this.ctx.currentTime;
       const src = this.ctx.createBufferSource();
       src.buffer = this.whiteBuf;
@@ -705,9 +753,9 @@ export class AudioEngine {
       g.connect(out);
       src.start(t, Math.random() * 2);
       src.stop(t + 0.05);
-      this.artTimers.push(window.setTimeout(tick, 60 + Math.random() * 380));
+      s.timers.push(window.setTimeout(tick, 60 + Math.random() * 380));
     };
-    this.artTimers.push(window.setTimeout(tick, 100));
+    s.timers.push(window.setTimeout(tick, 100));
   }
 
   // ---- controls ---------------------------------------------------------
@@ -734,7 +782,8 @@ export class AudioEngine {
 
   dispose() {
     window.clearTimeout(this.bellTimer);
-    for (const id of this.artTimers) window.clearTimeout(id);
+    for (const id of this.art.timers) window.clearTimeout(id);
+    for (const id of this.near.timers) window.clearTimeout(id);
     try {
       this.ctx.close();
     } catch {}

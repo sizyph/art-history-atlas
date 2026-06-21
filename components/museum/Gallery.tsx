@@ -27,6 +27,7 @@ import FullscreenViewer from "@/components/museum/FullscreenViewer";
 import MoveStick from "@/components/museum/MoveStick";
 import Visitors from "@/components/museum/Visitors";
 import Atmosphere from "@/components/museum/Atmosphere";
+import { daylight, skyColor, resetDaylight } from "@/lib/daylight";
 import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
@@ -612,6 +613,23 @@ function useRoomTextures(museum: Museum, depth: number) {
 
 function Ceiling({ museum, depth }: { museum: Museum; depth: number }) {
   const { roomWidth: W, wallHeight: H, ceiling, ceilingKind } = museum;
+  const skyMat = useRef<THREE.MeshBasicMaterial>(null);
+  const clereMats = useRef<(THREE.MeshBasicMaterial | null)[]>([]);
+  const scratch = useRef(new THREE.Color());
+
+  // skylights drift with the daylight state (warmer + dimmer toward dusk)
+  useFrame(() => {
+    if (!skyMat.current && clereMats.current.length === 0) return;
+    skyColor(scratch.current);
+    const lv = daylight.level;
+    if (skyMat.current) {
+      skyMat.current.color.copy(scratch.current).multiplyScalar(lv);
+    }
+    for (const m of clereMats.current) {
+      if (m) m.color.copy(scratch.current).multiplyScalar(lv);
+    }
+  });
+
   return (
     <group>
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, H, 0]}>
@@ -624,7 +642,7 @@ function Ceiling({ museum, depth }: { museum: Museum; depth: number }) {
           {/* glass-roof skylight ridge — a warm daylight strip down the nave */}
           <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, H - 0.02, 0]}>
             <planeGeometry args={[W * 0.26, depth - 1]} />
-            <meshBasicMaterial color="#fff3da" toneMapped={false} />
+            <meshBasicMaterial ref={skyMat} color="#fff3da" toneMapped={false} />
           </mesh>
           {/* vault ribs across the nave */}
           {Array.from({ length: Math.max(3, Math.round(depth / 3.5)) }).map(
@@ -643,14 +661,20 @@ function Ceiling({ museum, depth }: { museum: Museum; depth: number }) {
 
       {ceilingKind === "clerestory" && (
         <>
-          {[-1, 1].map((s) => (
+          {[-1, 1].map((s, idx) => (
             <mesh
               key={s}
               position={[s * (W / 2 - 0.05), H - 0.5, 0]}
               rotation={[0, -s * (Math.PI / 2), 0]}
             >
               <planeGeometry args={[depth - 1, 0.7]} />
-              <meshBasicMaterial color="#fbf4e6" toneMapped={false} />
+              <meshBasicMaterial
+                ref={(m) => {
+                  clereMats.current[idx] = m;
+                }}
+                color="#fbf4e6"
+                toneMapped={false}
+              />
             </mesh>
           ))}
         </>
@@ -1897,8 +1921,17 @@ function buildTourStops(hangs: Hang[], locale: Locale): TourStop[] {
   });
 }
 
-// Eases the camera to the current tour target — glide, heading, and a slight
-// tilt up to meet a high-hung canvas.
+// shortest-path angular interpolation
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+// Walks the camera to the current tour stop along a gently curved floor path —
+// facing the way it's heading, then turning to the work on arrival and holding
+// it with a barely-there drift, the way a docent pauses before a canvas.
 function TourCamera({
   activeRef,
   targetRef,
@@ -1907,20 +1940,69 @@ function TourCamera({
   targetRef: React.RefObject<TourStop | null>;
 }) {
   const { camera } = useThree();
-  useFrame((_, dt) => {
-    if (!activeRef.current) return;
+  const cur = useRef<TourStop | null>(null);
+  const from = useRef(new THREE.Vector3());
+  const fromYaw = useRef(0);
+  const mid = useRef(new THREE.Vector3());
+  const t = useRef(1);
+
+  useFrame((state, dt) => {
+    if (!activeRef.current) {
+      cur.current = null;
+      return;
+    }
     const tg = targetRef.current;
     if (!tg) return;
-    const k = Math.min(1, dt * 1.7);
-    camera.position.x += (tg.pos[0] - camera.position.x) * k;
-    camera.position.y += (EYE - camera.position.y) * k;
-    camera.position.z += (tg.pos[2] - camera.position.z) * k;
     camera.rotation.order = "YXZ";
-    let dy = tg.yaw - camera.rotation.y;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    camera.rotation.y += dy * k;
-    camera.rotation.x += (tg.pitch - camera.rotation.x) * k;
+
+    if (tg !== cur.current) {
+      cur.current = tg;
+      from.current.copy(camera.position);
+      fromYaw.current = camera.rotation.y;
+      t.current = 0;
+      // a midpoint nudged toward the room centre so the walk sweeps, not darts
+      mid.current.set(
+        (from.current.x + tg.pos[0]) * 0.3,
+        EYE,
+        (from.current.z + tg.pos[2]) * 0.5,
+      );
+    }
+
+    const TRANSIT = 2.4;
+    t.current = Math.min(1, t.current + dt / TRANSIT);
+    const tt = t.current;
+
+    if (tt < 1) {
+      const a = from.current;
+      const b = mid.current;
+      const u = 1 - tt;
+      camera.position.set(
+        u * u * a.x + 2 * u * tt * b.x + tt * tt * tg.pos[0],
+        EYE,
+        u * u * a.z + 2 * u * tt * b.z + tt * tt * tg.pos[2],
+      );
+      // heading follows the path's velocity, then turns to face the work
+      const vx = 2 * u * (b.x - a.x) + 2 * tt * (tg.pos[0] - b.x);
+      const vz = 2 * u * (b.z - a.z) + 2 * tt * (tg.pos[2] - b.z);
+      const walkYaw =
+        Math.hypot(vx, vz) > 0.001 ? Math.atan2(-vx, -vz) : tg.yaw;
+      const settle = Math.max(0, Math.min(1, (tt - 0.62) / 0.38));
+      camera.rotation.y = lerpAngle(
+        lerpAngle(fromYaw.current, walkYaw, Math.min(1, tt * 4)),
+        tg.yaw,
+        settle,
+      );
+      camera.rotation.x += (tg.pitch * settle - camera.rotation.x) * 0.12;
+    } else {
+      // arrived: hold the work, breathing very slightly
+      const k = Math.min(1, dt * 2);
+      camera.position.x += (tg.pos[0] - camera.position.x) * k;
+      camera.position.z += (tg.pos[2] - camera.position.z) * k;
+      camera.position.y = EYE;
+      const drift = tg.yaw + Math.sin(state.clock.elapsedTime * 0.22) * 0.02;
+      camera.rotation.y = lerpAngle(camera.rotation.y, drift, k);
+      camera.rotation.x += (tg.pitch - camera.rotation.x) * k;
+    }
     camera.rotation.z = 0;
   });
   return null;
@@ -1944,6 +2026,7 @@ function Contemplate({
   onScene,
   onArtwork,
   onFocus,
+  onNear,
 }: {
   enabledRef: React.RefObject<boolean>;
   hangs: Hang[];
@@ -1951,6 +2034,7 @@ function Contemplate({
   onScene: (s: Scene) => void;
   onArtwork: (s: ArtSubject | null) => void;
   onFocus: (title: string | null) => void;
+  onNear: (s: ArtSubject | null, pan: number, level: number) => void;
 }) {
   const { camera, gl, scene } = useThree();
   const metas = useMemo<FocusMeta[]>(
@@ -1980,21 +2064,32 @@ function Contemplate({
     if (justDisabled) {
       lastTitle.current = null;
       onFocus(null);
+      onNear(null, 0, 0); // hand the spatial bus back to silence
     }
 
     let target = 0;
     let best: FocusMeta | null = null;
+    let nearest: FocusMeta | null = null;
+    let nearestDist = Infinity;
+    let nearestPan = 0;
     if (enabled && metas.length) {
       camera.getWorldDirection(fwd.current);
       const fx = fwd.current.x;
       const fz = fwd.current.z;
       const flen = Math.hypot(fx, fz) || 1;
+      const rx = -fz / flen; // camera's right, in the floor plane
+      const rz = fx / flen;
       let bestScore = -1;
       for (const m of metas) {
         const dx = m.cx - camera.position.x;
         const dz = m.cz - camera.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist < 0.4 || m.nx * dx >= 0) continue; // must be on the room side
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = m;
+          nearestPan = Math.max(-1, Math.min(1, (dx * rx + dz * rz) / dist));
+        }
         const dot = (fx * dx + fz * dz) / (flen * dist);
         const near = dist < (lastScene.current === "artview" ? 4.0 : 3.1);
         const facing = dot > (lastScene.current === "artview" ? 0.55 : 0.72);
@@ -2020,6 +2115,11 @@ function Contemplate({
         onArtwork(best.subject);
         onFocus(best.title);
       }
+      // faint, panned hint of whatever work you're closest to
+      const level = nearest
+        ? Math.max(0, Math.min(0.3, 0.3 * (1 - (nearestDist - 1.2) / 6)))
+        : 0;
+      onNear(nearest ? nearest.subject : null, nearestPan, level);
     }
 
     f.current += (target - f.current) * Math.min(1, dt * 2.2);
@@ -2044,6 +2144,49 @@ function Contemplate({
     }
   });
 
+  return null;
+}
+
+// A slow tide of daylight in skylit halls: over a few minutes the sun warms and
+// lowers toward golden hour and back, carrying the skylight and god-ray shafts
+// with it (via the shared daylight store). Runs only after the intro, so it
+// never fights IntroCamera's lighting ramp.
+function DayCycle() {
+  const { scene } = useThree();
+  const sun = useRef<THREE.DirectionalLight | null>(null);
+  const baseInt = useRef(1);
+  const baseCol = useRef(new THREE.Color());
+  const amber = useRef(new THREE.Color("#ffb066"));
+  const t0 = useRef<number | null>(null);
+
+  useEffect(() => resetDaylight, []);
+
+  useFrame((state) => {
+    if (t0.current === null) t0.current = state.clock.elapsedTime;
+    const e = state.clock.elapsedTime - t0.current;
+    const PERIOD = 240; // seconds for a full midday → dusk → midday swing
+    const warm = 0.5 - 0.5 * Math.cos((e / PERIOD) * Math.PI * 2);
+    daylight.warm = warm;
+    daylight.level = 1 - warm * 0.22;
+
+    if (!sun.current) {
+      scene.traverse((o) => {
+        const L = o as THREE.DirectionalLight;
+        if (L.isDirectionalLight && !sun.current) {
+          sun.current = L;
+          const stored = L.userData.dayBaseInt as number | undefined;
+          baseInt.current = stored ?? L.intensity;
+          L.userData.dayBaseInt = baseInt.current;
+          baseCol.current.copy(L.color);
+        }
+      });
+    }
+    const s = sun.current;
+    if (s) {
+      s.intensity = baseInt.current * (1 - warm * 0.4);
+      s.color.copy(baseCol.current).lerp(amber.current, warm * 0.6);
+    }
+  });
   return null;
 }
 
@@ -2082,6 +2225,7 @@ export default function Gallery({
     setDepth,
     step,
     setArtwork,
+    setNearWork,
     setDucked,
     setRoomSize,
   } = useAudio();
@@ -2113,6 +2257,10 @@ export default function Gallery({
   const tourTimer = useRef<number | undefined>(undefined);
   const contemplateOn = useRef(false);
   const visitorCount = Math.min(6, Math.max(3, Math.round(depth / 7)));
+  const skylit =
+    museum.daylight != null ||
+    museum.ceilingKind === "vault" ||
+    museum.ceilingKind === "clerestory";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dofRef = useRef<any>(null);
 
@@ -2452,8 +2600,10 @@ export default function Gallery({
           onScene={setAudioScene}
           onArtwork={setArtwork}
           onFocus={setFocusTitle}
+          onNear={setNearWork}
         />
         <TourCamera activeRef={tourActive} targetRef={tourTarget} />
+        {skylit && phase === 2 && <DayCycle />}
 
         <EffectComposer>
           {/* gentle depth separation — the centre subject stays crisp */}

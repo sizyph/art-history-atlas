@@ -22,6 +22,7 @@ type AudioCtx = {
   setDepth: (d: number) => void;
   step: () => void;
   setArtwork: (s: ArtSubject | null) => void;
+  setNearWork: (s: ArtSubject | null, pan: number, level: number) => void;
   setDucked: (d: boolean) => void;
   setRoomSize: (depthMeters: number) => void;
   enterMuseum: () => void;
@@ -38,6 +39,7 @@ const Ctx = createContext<AudioCtx>({
   setDepth: () => {},
   step: () => {},
   setArtwork: () => {},
+  setNearWork: () => {},
   setDucked: () => {},
   setRoomSize: () => {},
   enterMuseum: () => {},
@@ -118,6 +120,13 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setArtwork(s);
   }, []);
 
+  const setNearWork = useCallback(
+    (s: ArtSubject | null, pan: number, level: number) => {
+      engineRef.current?.setNearWork(s, pan, level);
+    },
+    [],
+  );
+
   const setDucked = useCallback((d: boolean) => {
     engineRef.current?.setDucked(d);
   }, []);
@@ -144,6 +153,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         setDepth,
         step,
         setArtwork,
+        setNearWork,
         setDucked,
         setRoomSize,
         enterMuseum,

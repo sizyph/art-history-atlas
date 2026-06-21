@@ -44,6 +44,10 @@ type Fig = {
   pause: number;
   h: number;
   tint: string;
+  phase: number; // desync for the idle sway
+  atWall: boolean; // current target is a viewing spot at a wall
+  lead: number; // index of the companion this one follows (−1 if none)
+  follow: number; // index of this one's companion (−1 if none)
 };
 
 // Dark grey-browns rather than near-black, so a silhouette still reads against
@@ -56,13 +60,15 @@ const noRaycast = () => {};
 function retarget(f: Fig, roomWidth: number, depth: number) {
   const hx = roomWidth / 2 - 1.4;
   const hz = depth / 2 - 2;
-  // mostly drift toward a wall (where the art is), sometimes the middle
-  if (Math.random() < 0.62) {
-    f.tx = (Math.random() < 0.5 ? -1 : 1) * (hx - 0.3 + Math.random() * 0.3);
+  // mostly drift up to a wall (to stand before the art), sometimes the middle
+  if (Math.random() < 0.72) {
+    f.tx = (Math.random() < 0.5 ? -1 : 1) * (hx - 0.2 + Math.random() * 0.3);
     f.tz = -hz + Math.random() * 2 * hz;
+    f.atWall = true;
   } else {
     f.tx = -hx + Math.random() * 2 * hx;
     f.tz = -hz + Math.random() * 2 * hz;
+    f.atWall = false;
   }
 }
 
@@ -77,6 +83,10 @@ function spawn(roomWidth: number, depth: number): Fig {
     pause: Math.random() * 5,
     h: 1.62 + Math.random() * 0.22,
     tint: TINTS[Math.floor(Math.random() * TINTS.length)],
+    phase: Math.random() * Math.PI * 2,
+    atWall: false,
+    lead: -1,
+    follow: -1,
   };
   retarget(f, roomWidth, depth);
   return f;
@@ -99,34 +109,62 @@ export default function Visitors({
   const figs = useRef<Fig[]>([]);
   if (figs.current.length !== count) {
     figs.current = Array.from({ length: count }, () => spawn(roomWidth, depth));
+    // pair the first two into companions (only when a solo wanderer remains)
+    if (count >= 3) {
+      figs.current[0].follow = 1;
+      figs.current[1].lead = 0;
+    }
   }
   const groups = useRef<(THREE.Group | null)[]>([]);
 
   useFrame((state, dt) => {
     const cam = state.camera;
     const step = Math.min(dt, 0.05);
-    for (let i = 0; i < figs.current.length; i++) {
-      const f = figs.current[i];
+    const tm = state.clock.elapsedTime;
+    const list = figs.current;
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
       const g = groups.current[i];
       if (!g) continue;
-      if (f.pause > 0) {
+      if (f.lead >= 0) {
+        // a companion: walk to the spot its leader keeps assigning, then wait
+        const dx = f.tx - f.x;
+        const dz = f.tz - f.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.3) {
+          const s = (step * 0.46) / d;
+          f.x += dx * s;
+          f.z += dz * s;
+        }
+      } else if (f.pause > 0) {
         f.pause -= step;
       } else {
         const dx = f.tx - f.x;
         const dz = f.tz - f.z;
         const d = Math.hypot(dx, dz);
         if (d < 0.28) {
-          f.pause = 3 + Math.random() * 7;
+          // dwell longer when standing before a work than mid-floor
+          f.pause = f.atWall ? 6 + Math.random() * 8 : 2 + Math.random() * 4;
           retarget(f, roomWidth, depth);
+          if (f.follow >= 0) {
+            // place the companion beside the new viewing spot
+            const fo = list[f.follow];
+            const lim = roomWidth / 2 - 1.0;
+            const off = f.tx < 0 ? 0.7 : -0.7;
+            fo.tx = Math.max(-lim, Math.min(lim, f.tx + off));
+            fo.tz = f.tz + (Math.random() - 0.5) * 0.6;
+            fo.atWall = f.atWall;
+          }
         } else {
           const s = (step * 0.5) / d;
           f.x += dx * s;
           f.z += dz * s;
         }
       }
+      // billboard to the viewer (upright), with a slow weight-shift sway
       g.position.set(f.x, 0, f.z);
-      // billboard to the viewer (upright)
       g.rotation.y = Math.atan2(cam.position.x - f.x, cam.position.z - f.z);
+      g.rotation.z = Math.sin(tm * 0.8 + f.phase) * 0.02;
     }
   });
 
