@@ -83,6 +83,7 @@ export default function ArtistCard({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        data-scroll-list
         className="relative w-full max-w-[460px] overflow-hidden rounded-2xl border border-line"
         style={{
           background: "#17130E",
@@ -166,17 +167,13 @@ export default function ArtistCard({
               />
             </div>
           )}
-          <p
-            className="text-[14px] leading-relaxed text-ink-soft"
-            style={{
-              display: "-webkit-box",
-              WebkitLineClamp: 6,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
+          <div
+            data-scroll-list
+            className="max-h-[168px] overflow-y-auto pr-2 text-[14px] leading-relaxed text-ink-soft [scrollbar-color:rgba(255,255,255,0.22)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-[7px] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent"
+            style={{ overscrollBehavior: "contain" }}
           >
             {displayBio ?? t("biographyUnavailable")}
-          </p>
+          </div>
         </div>
 
         <div className="p-6 pt-5">

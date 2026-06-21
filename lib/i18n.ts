@@ -50,6 +50,7 @@ const en: Dict = {
   tour: "Guided tour",
   tourNext: "Next",
   tourEnd: "End tour",
+  tourStops: "Jump to a work",
 };
 
 const fr: Dict = {
@@ -93,6 +94,7 @@ const fr: Dict = {
   tour: "Visite guidée",
   tourNext: "Suivant",
   tourEnd: "Terminer",
+  tourStops: "Aller à une œuvre",
 };
 
 const ja: Dict = {
@@ -136,6 +138,7 @@ const ja: Dict = {
   tour: "ガイドツアー",
   tourNext: "次へ",
   tourEnd: "終了",
+  tourStops: "作品へ移動",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

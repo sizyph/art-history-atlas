@@ -80,6 +80,7 @@ export default function FullscreenViewer({
     let cancelled = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let viewer: any;
+    let ro: ResizeObserver | null = null;
     setLoading(true);
     (async () => {
       const dims = await originalSize(painting.imageUrl);
@@ -118,16 +119,52 @@ export default function FullscreenViewer({
         visibilityRatio: 1,
         minZoomImageRatio: 0.9,
         maxZoomPixelRatio: 2.4,
+        // We own resizing (below). OSD's internal autoResize poll, combined with
+        // Retina device-pixel rounding, intermittently recomputed the viewport
+        // mid-zoom — pinning the image to a corner and leaving the bottom-right
+        // unreachable. Driving it ourselves makes the geometry deterministic.
+        autoResize: false,
         gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true },
         gestureSettingsTouch: { pinchToZoom: true, flickEnabled: true },
       });
       viewerRef.current = viewer;
       viewer.addHandler("open", () => {
+        // lock the correct full-image fit once the source is known
+        try {
+          const el = hostRef.current;
+          if (el) {
+            viewer.viewport.resize(
+              new OpenSeadragon.Point(el.clientWidth, el.clientHeight),
+              false,
+            );
+          }
+          viewer.viewport.goHome(true);
+        } catch {}
         if (!cancelled) setLoading(false);
       });
+
+      // Keep OSD's notion of the container exactly in sync with the real element
+      // at every device-pixel ratio, preserving the current view on a resize.
+      if (typeof ResizeObserver !== "undefined" && hostRef.current) {
+        ro = new ResizeObserver(() => {
+          const el = hostRef.current;
+          if (!el || !viewerRef.current) return;
+          const w = el.clientWidth;
+          const h = el.clientHeight;
+          if (w < 2 || h < 2) return;
+          try {
+            viewer.viewport.resize(new OpenSeadragon.Point(w, h), true);
+            viewer.viewport.applyConstraints(true);
+          } catch {}
+        });
+        ro.observe(hostRef.current);
+      }
     })();
     return () => {
       cancelled = true;
+      try {
+        ro?.disconnect();
+      } catch {}
       try {
         viewer?.destroy();
       } catch {}

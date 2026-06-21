@@ -2190,6 +2190,16 @@ function DayCycle() {
   return null;
 }
 
+// Mirrors the live camera position into a ref so the tour (in React land) can
+// start from the work you're nearest to.
+function CameraProbe({ posRef }: { posRef: React.RefObject<THREE.Vector3> }) {
+  const { camera } = useThree();
+  useFrame(() => {
+    posRef.current.copy(camera.position);
+  });
+  return null;
+}
+
 export default function Gallery({
   museum,
   artist,
@@ -2255,6 +2265,10 @@ export default function Gallery({
   const tourTarget = useRef<TourStop | null>(null);
   const tourAudio = useRef<HTMLAudioElement | null>(null);
   const tourTimer = useRef<number | undefined>(undefined);
+  const tourOrder = useRef<number[]>([]); // visiting order (indices into tourStops)
+  const tourPos = useRef(0); // position within tourOrder
+  const tourGen = useRef(0); // bumps each stop, so stale narration can't advance
+  const camPos = useRef(new THREE.Vector3(0, EYE, 0));
   const contemplateOn = useRef(false);
   const visitorCount = Math.min(6, Math.max(3, Math.round(depth / 7)));
   const skylit =
@@ -2370,6 +2384,7 @@ export default function Gallery({
 
   function endTour() {
     tourActive.current = false;
+    tourGen.current++;
     clearTourTimer();
     stopTourAudio();
     setDucked(false);
@@ -2382,30 +2397,33 @@ export default function Gallery({
     contemplateOn.current = true;
   }
 
-  function nextStop(from: number) {
+  function nextStop() {
     if (!tourActive.current) return;
     clearTourTimer();
     setDucked(false);
-    const n = from + 1;
-    if (n >= tourStops.length) endTour();
-    else goToStop(n);
+    const np = tourPos.current + 1;
+    if (np >= tourOrder.current.length) endTour();
+    else goToPos(np);
   }
 
-  function playNarration(i: number) {
-    if (!tourActive.current) return;
-    const s = tourStops[i];
+  function playNarration(stopIdx: number, gen: number) {
+    if (!tourActive.current || gen !== tourGen.current) return;
+    const s = tourStops[stopIdx];
     if (!s) return;
+    const advance = () => {
+      if (gen === tourGen.current) nextStop();
+    };
     setDucked(true);
     const el = new Audio(`/api/narrate?id=${s.painting.id}&lang=${locale}`);
     el.volume = getGuideVolume();
     tourAudio.current = el;
     const finish = () => {
       if (tourAudio.current === el) tourAudio.current = null;
-      nextStop(i);
+      advance();
     };
     let fellBack = false;
     const fallback = () => {
-      if (fellBack || !tourActive.current) return;
+      if (fellBack || !tourActive.current || gen !== tourGen.current) return;
       fellBack = true;
       if (tourAudio.current === el) tourAudio.current = null;
       const synth = window.speechSynthesis;
@@ -2420,15 +2438,15 @@ export default function Gallery({
           .getVoices()
           .find((x) => x.lang?.toLowerCase().startsWith(locale));
         if (v) u.voice = v;
-        u.onend = () => nextStop(i);
-        u.onerror = () => nextStop(i);
+        u.onend = advance;
+        u.onerror = advance;
         synth.speak(u);
         tourTimer.current = window.setTimeout(() => {
           synth.cancel();
-          nextStop(i);
+          advance();
         }, 40000);
       } else {
-        tourTimer.current = window.setTimeout(() => nextStop(i), 6000);
+        tourTimer.current = window.setTimeout(advance, 6000);
       }
     };
     el.onended = finish;
@@ -2436,27 +2454,56 @@ export default function Gallery({
     el.play().catch(fallback);
     // hard safety cap against a stalled stream
     tourTimer.current = window.setTimeout(() => {
-      if (tourActive.current) {
+      if (tourActive.current && gen === tourGen.current) {
         stopTourAudio();
-        nextStop(i);
+        advance();
       }
     }, 48000);
   }
 
-  function goToStop(i: number) {
+  function goToPos(pos: number) {
     if (!tourActive.current) return;
     clearTourTimer();
     stopTourAudio();
     setDucked(false);
-    const s = tourStops[i];
+    if (pos < 0 || pos >= tourOrder.current.length) {
+      endTour();
+      return;
+    }
+    tourPos.current = pos;
+    const stopIdx = tourOrder.current[pos];
+    const s = tourStops[stopIdx];
     if (!s) {
       endTour();
       return;
     }
-    setTourIdx(i);
+    const gen = ++tourGen.current;
+    setTourIdx(stopIdx);
     setFocusTitle(s.title);
     tourTarget.current = s;
-    tourTimer.current = window.setTimeout(() => playNarration(i), 2600);
+    tourTimer.current = window.setTimeout(() => playNarration(stopIdx, gen), 2600);
+  }
+
+  // jump to a chosen work and continue the tour onward from there
+  function jumpToStop(stopIdx: number) {
+    if (!tourActive.current) return;
+    const pos = tourOrder.current.indexOf(stopIdx);
+    if (pos >= 0) goToPos(pos);
+  }
+
+  function nearestStopIndex(): number {
+    let best = 0;
+    let bestD = Infinity;
+    const p = camPos.current;
+    for (let i = 0; i < tourStops.length; i++) {
+      const s = tourStops[i];
+      const d = (s.pos[0] - p.x) ** 2 + (s.pos[2] - p.z) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
   }
 
   function startTour() {
@@ -2469,7 +2516,11 @@ export default function Gallery({
     contemplateOn.current = false;
     setTour(true);
     setAudioScene("gallery");
-    goToStop(0);
+    // begin at the work you're nearest to, then continue along the walls
+    const start = nearestStopIndex();
+    const n = tourStops.length;
+    tourOrder.current = Array.from({ length: n }, (_, k) => (start + k) % n);
+    goToPos(0);
   }
 
   // stop any tour audio/timers if the gallery unmounts mid-tour
@@ -2603,6 +2654,7 @@ export default function Gallery({
           onNear={setNearWork}
         />
         <TourCamera activeRef={tourActive} targetRef={tourTarget} />
+        <CameraProbe posRef={camPos} />
         {skylit && phase === 2 && <DayCycle />}
 
         <EffectComposer>
@@ -2692,7 +2744,18 @@ export default function Gallery({
         </button>
       )}
 
-      {tour && <TourBar idx={tourIdx} total={tourStops.length} title={focusTitle} accent={accent} onNext={() => nextStop(tourIdx)} onEnd={endTour} />}
+      {tour && (
+        <TourBar
+          stops={tourStops.map((s, i) => ({ idx: i, title: s.title }))}
+          currentIdx={tourIdx}
+          pos={Math.max(1, tourOrder.current.indexOf(tourIdx) + 1)}
+          title={focusTitle}
+          accent={accent}
+          onJump={jumpToStop}
+          onNext={nextStop}
+          onEnd={endTour}
+        />
+      )}
 
       {inspect && (
         <InspectOverlay
@@ -2746,32 +2809,84 @@ function FadeIn() {
 }
 
 function TourBar({
-  idx,
-  total,
+  stops,
+  currentIdx,
+  pos,
   title,
   accent,
+  onJump,
   onNext,
   onEnd,
 }: {
-  idx: number;
-  total: number;
+  stops: { idx: number; title: string }[];
+  currentIdx: number;
+  pos: number; // visiting progress (1-based)
   title: string | null;
   accent: string;
+  onJump: (idx: number) => void;
   onNext: () => void;
   onEnd: () => void;
 }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const total = stops.length;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-7 flex justify-center px-4">
-      <div className="pointer-events-auto flex items-center gap-4 rounded-full border border-white/15 bg-black/55 px-5 py-2.5 backdrop-blur">
-        <span
-          className="text-[11px] tabular-nums tracking-[0.2em]"
+    <div className="pointer-events-none absolute inset-x-0 bottom-7 flex flex-col items-center gap-2 px-4">
+      {open && (
+        <div
+          data-scroll-list
+          className="pointer-events-auto max-h-[46vh] w-[min(92vw,420px)] overflow-y-auto rounded-2xl border border-white/15 bg-black/75 p-2 backdrop-blur [scrollbar-color:rgba(255,255,255,0.22)_transparent] [scrollbar-width:thin]"
+          style={{ overscrollBehavior: "contain" }}
+        >
+          <div className="px-2 py-1.5 text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+            {t("tourStops")}
+          </div>
+          {stops.map((s) => {
+            const active = s.idx === currentIdx;
+            return (
+              <button
+                key={s.idx}
+                onClick={() => {
+                  onJump(s.idx);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/10"
+                style={{
+                  color: active ? accent : "var(--ink-soft)",
+                  background: active ? `${accent}1f` : "transparent",
+                }}
+              >
+                <span className="w-5 shrink-0 text-right text-[10px] tabular-nums text-ink-faint">
+                  {s.idx + 1}
+                </span>
+                <span className="truncate">{s.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/15 bg-black/55 px-4 py-2.5 backdrop-blur">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-label={t("tourStops")}
+          className="flex items-center gap-1.5 text-[11px] tabular-nums tracking-[0.18em] transition-opacity hover:opacity-80"
           style={{ color: accent }}
         >
-          {idx + 1} / {total}
-        </span>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+          </svg>
+          {pos} / {total}
+        </button>
         {title && (
-          <span className="max-w-[44vw] truncate font-display text-[15px] italic text-ink">
+          <span className="max-w-[38vw] truncate font-display text-[15px] italic text-ink">
             {title}
           </span>
         )}

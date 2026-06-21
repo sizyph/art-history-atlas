@@ -1,8 +1,8 @@
 /**
- * Fill missing fr/ja painting stories by machine-translating the English
- * Wikipedia story. English stays the Wikipedia source of truth; other locales
- * fall back to a good translation only where no native-language article exists.
- * Idempotent: only fills locales whose story is currently empty.
+ * Fill missing fr/ja content by machine-translating from English: painting
+ * titles + stories, and artist nationalities + bios. English stays the Wikipedia
+ * source of truth; other locales fall back to a good translation only where no
+ * native-language article exists. Idempotent: only fills empty fields.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -65,32 +65,47 @@ async function translate(text: string, target: string): Promise<string> {
 
 async function main() {
   const { db } = await import("../db");
-  const { paintings } = await import("../db/schema");
+  const { artists, paintings } = await import("../db/schema");
   const { eq } = await import("drizzle-orm");
 
+  // ── Paintings: title + story ───────────────────────────────────────────
   const rows = await db.select().from(paintings);
   console.log(`— FILL TRANSLATIONS — ${rows.length} paintings\n`);
 
   let filled = 0;
   let touched = 0;
   for (const p of rows) {
-    if (!p.story) continue;
     const i18n = {
       ...((p.i18n ?? {}) as Record<string, { title?: string; story?: string }>),
     };
     let changed = false;
     for (const lang of LANGS) {
-      if (i18n[lang]?.story) continue;
-      try {
-        const story = await translate(p.story, lang);
-        if (story && story.trim()) {
-          i18n[lang] = { ...(i18n[lang] ?? {}), story: story.trim() };
-          changed = true;
-          filled++;
+      const entry = { ...(i18n[lang] ?? {}) };
+      if (p.title && !entry.title) {
+        try {
+          const title = (await translate(p.title, lang)).trim();
+          if (title) {
+            entry.title = title;
+            changed = true;
+            filled++;
+          }
+        } catch {
+          console.log(`  ✗ ${lang} title ${p.title}`);
         }
-      } catch {
-        console.log(`  ✗ ${lang} ${p.title}`);
       }
+      if (p.story && !entry.story) {
+        try {
+          const story = (await translate(p.story, lang)).trim();
+          if (story) {
+            entry.story = story;
+            changed = true;
+            filled++;
+          }
+        } catch {
+          console.log(`  ✗ ${lang} story ${p.title}`);
+        }
+      }
+      i18n[lang] = entry;
     }
     if (changed) {
       await db.update(paintings).set({ i18n }).where(eq(paintings.id, p.id));
@@ -98,7 +113,56 @@ async function main() {
       if (touched % 20 === 0) console.log(`  …${touched} paintings updated`);
     }
   }
-  console.log(`\n— Done — ${filled} stories filled across ${touched} paintings`);
+  console.log(`— paintings: ${filled} fields filled across ${touched} rows\n`);
+
+  // ── Artists: nationality + bio ─────────────────────────────────────────
+  const arts = await db.select().from(artists);
+  console.log(`— ${arts.length} artists\n`);
+  let aFilled = 0;
+  let aTouched = 0;
+  for (const a of arts) {
+    const i18n = {
+      ...((a.i18n ?? {}) as Record<
+        string,
+        { name?: string; nationality?: string; bio?: string }
+      >),
+    };
+    let changed = false;
+    for (const lang of LANGS) {
+      const entry = { ...(i18n[lang] ?? {}) };
+      if (a.nationality && !entry.nationality) {
+        try {
+          const v = (await translate(a.nationality, lang)).trim();
+          if (v) {
+            entry.nationality = v;
+            changed = true;
+            aFilled++;
+          }
+        } catch {
+          console.log(`  ✗ ${lang} nat ${a.name}`);
+        }
+      }
+      if (a.bio && !entry.bio) {
+        try {
+          const v = (await translate(a.bio, lang)).trim();
+          if (v) {
+            entry.bio = v;
+            changed = true;
+            aFilled++;
+          }
+        } catch {
+          console.log(`  ✗ ${lang} bio ${a.name}`);
+        }
+      }
+      i18n[lang] = entry;
+    }
+    if (changed) {
+      await db.update(artists).set({ i18n }).where(eq(artists.id, a.id));
+      aTouched++;
+    }
+  }
+  console.log(`— artists: ${aFilled} fields filled across ${aTouched} rows`);
+  console.log(`\n— Done —`);
   process.exit(0);
 }
 
