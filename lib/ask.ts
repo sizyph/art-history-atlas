@@ -1,9 +1,9 @@
 import { type Locale } from "@/lib/i18n";
 
-// Gemini 2.0 Flash with Google Search grounding — a free-tier "brain" that
-// answers a visitor's art question to the point, then offers an anecdote, with
-// real citations from the web.
-const MODEL = "gemini-2.0-flash";
+// Gemini 2.5 Flash with Google Search grounding — answers a visitor's art
+// question to the point, then offers an anecdote, with real citations from the
+// web. (2.0-flash is quota-capped on EU keys; 2.5-flash is the working tier.)
+const MODEL = "gemini-2.5-flash";
 
 export function askConfigured(): boolean {
   return !!process.env.GEMINI_API_KEY;
