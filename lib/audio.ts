@@ -76,6 +76,10 @@ export class AudioEngine {
   private artTimers: number[] = [];
   private artSubject: ArtSubject | null = null;
 
+  // room reverb, its wet level scaled to the hall's size
+  private verbSend: GainNode;
+  private verbWet: GainNode;
+
   private pinkBuf: AudioBuffer;
   private whiteBuf: AudioBuffer;
 
@@ -139,8 +143,35 @@ export class AudioEngine {
     this.artScape.gain.value = 0.9;
     this.artScape.connect(this.artGain);
 
+    // ---- room reverb (parallel wet send off the room + art buses) ----
+    this.verbSend = this.ctx.createGain();
+    this.verbSend.gain.value = 1;
+    const verb = this.ctx.createConvolver();
+    verb.buffer = this.makeIR(1.8, 2.6);
+    this.verbWet = this.ctx.createGain();
+    this.verbWet.gain.value = 0.0001;
+    this.verbSend.connect(verb);
+    verb.connect(this.verbWet);
+    this.verbWet.connect(this.master);
+    this.galleryGain.connect(this.verbSend);
+    this.artGain.connect(this.verbSend);
+
     this.loadCrowd();
     this.loadLaughter();
+  }
+
+  // a simple decaying-noise impulse response — a believable stone-hall tail
+  private makeIR(seconds: number, decay: number): AudioBuffer {
+    const rate = this.ctx.sampleRate;
+    const len = Math.max(1, Math.floor(rate * seconds));
+    const buf = this.ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
   }
 
   // ---- buffers ----------------------------------------------------------
@@ -385,6 +416,16 @@ export class AudioEngine {
   setDepth(d: number) {
     this.depth = Math.max(0, Math.min(1, d));
     if (this.started) this.applySpatial();
+  }
+
+  // wet level grows with the hall — an intimate room stays dry, a nave rings
+  setRoomSize(depthMeters: number) {
+    const wet = Math.max(0.06, Math.min(0.34, (depthMeters - 14) / 60 + 0.08));
+    if (this.started) {
+      this.verbWet.gain.setTargetAtTime(wet, this.ctx.currentTime, 0.6);
+    } else {
+      this.verbWet.gain.value = wet;
+    }
   }
 
   // The vernissage at the threshold: a loud, bright crowd (chatter + laughter)

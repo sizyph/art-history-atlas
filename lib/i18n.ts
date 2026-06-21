@@ -47,6 +47,9 @@ const en: Dict = {
   influencedBy: "Influenced by",
   influenceOn: "Influence on",
   doorwayHint: "Walk to the far wall — doorways lead to kindred galleries",
+  tour: "Guided tour",
+  tourNext: "Next",
+  tourEnd: "End tour",
 };
 
 const fr: Dict = {
@@ -87,6 +90,9 @@ const fr: Dict = {
   influencedBy: "Influencé par",
   influenceOn: "Influence sur",
   doorwayHint: "Marchez vers le fond — les portes mènent aux galeries parentes",
+  tour: "Visite guidée",
+  tourNext: "Suivant",
+  tourEnd: "Terminer",
 };
 
 const ja: Dict = {
@@ -127,6 +133,9 @@ const ja: Dict = {
   influencedBy: "影響を受けた",
   influenceOn: "影響を与えた",
   doorwayHint: "奥の壁へ進むと、つながる画家のギャラリーへの扉があります",
+  tour: "ガイドツアー",
+  tourNext: "次へ",
+  tourEnd: "終了",
 };
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };

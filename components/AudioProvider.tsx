@@ -23,6 +23,7 @@ type AudioCtx = {
   step: () => void;
   setArtwork: (s: ArtSubject | null) => void;
   setDucked: (d: boolean) => void;
+  setRoomSize: (depthMeters: number) => void;
   enterMuseum: () => void;
 };
 
@@ -38,6 +39,7 @@ const Ctx = createContext<AudioCtx>({
   step: () => {},
   setArtwork: () => {},
   setDucked: () => {},
+  setRoomSize: () => {},
   enterMuseum: () => {},
 });
 
@@ -47,6 +49,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const [muted, setMutedState] = useState(false);
   const [volume, setVolumeState] = useState(0.55);
   const pendingScene = useRef<Scene>("off");
+  const pendingRoom = useRef<number | null>(null);
 
   useEffect(() => {
     const sv = localStorage.getItem("audioVolume");
@@ -65,6 +68,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         e.setVolume(volume);
         e.setMuted(muted);
         e.setScene(pendingScene.current);
+        if (pendingRoom.current != null) e.setRoomSize(pendingRoom.current);
         void e.start().then(() => setReady(true));
       } catch {}
     };
@@ -118,6 +122,11 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     engineRef.current?.setDucked(d);
   }, []);
 
+  const setRoomSize = useCallback((depthMeters: number) => {
+    pendingRoom.current = depthMeters;
+    engineRef.current?.setRoomSize(depthMeters);
+  }, []);
+
   const enterMuseum = useCallback(() => {
     engineRef.current?.enterTransition();
   }, []);
@@ -136,6 +145,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         step,
         setArtwork,
         setDucked,
+        setRoomSize,
         enterMuseum,
       }}
     >

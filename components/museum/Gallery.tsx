@@ -25,12 +25,15 @@ import type { Neighbor } from "@/lib/data";
 import InspectOverlay from "@/components/museum/InspectOverlay";
 import FullscreenViewer from "@/components/museum/FullscreenViewer";
 import MoveStick from "@/components/museum/MoveStick";
+import Visitors from "@/components/museum/Visitors";
+import Atmosphere from "@/components/museum/Atmosphere";
 import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
-import { classifySubject } from "@/lib/audio";
-import { localized, periodName } from "@/lib/i18n";
+import { classifySubject, type ArtSubject, type Scene } from "@/lib/audio";
+import { getGuideVolume } from "@/lib/guideAudio";
+import { localized, periodName, type Locale } from "@/lib/i18n";
 import {
   frameProfile,
   type DescPalette,
@@ -1862,6 +1865,188 @@ function InfluenceDoors({
   );
 }
 
+const BCP47: Record<Locale, string> = { en: "en-US", fr: "fr-FR", ja: "ja-JP" };
+
+type TourStop = {
+  painting: Painting;
+  title: string;
+  subject: ArtSubject;
+  pos: [number, number, number];
+  yaw: number;
+  pitch: number;
+};
+
+// A viewing pose in front of every hung work, in walking order — the itinerary
+// the guided tour follows.
+function buildTourStops(hangs: Hang[], locale: Locale): TourStop[] {
+  const VIEW = 2.7;
+  return hangs.map((h) => {
+    const [px, py, pz] = h.position;
+    const leftWall = h.rotation[1] > 0; // +π/2 left wall, −π/2 right wall
+    const x = leftWall ? px + VIEW : px - VIEW;
+    const yaw = leftWall ? Math.PI / 2 : -Math.PI / 2;
+    const pitch = Math.atan2(py - EYE, VIEW) * 0.6;
+    return {
+      painting: h.p,
+      title: localized(locale, h.p.i18n, "title", h.p.title) ?? h.p.title,
+      subject: classifySubject(`${h.p.title} ${h.p.story ?? ""}`),
+      pos: [x, EYE, pz],
+      yaw,
+      pitch,
+    };
+  });
+}
+
+// Eases the camera to the current tour target — glide, heading, and a slight
+// tilt up to meet a high-hung canvas.
+function TourCamera({
+  activeRef,
+  targetRef,
+}: {
+  activeRef: React.RefObject<boolean>;
+  targetRef: React.RefObject<TourStop | null>;
+}) {
+  const { camera } = useThree();
+  useFrame((_, dt) => {
+    if (!activeRef.current) return;
+    const tg = targetRef.current;
+    if (!tg) return;
+    const k = Math.min(1, dt * 1.7);
+    camera.position.x += (tg.pos[0] - camera.position.x) * k;
+    camera.position.y += (EYE - camera.position.y) * k;
+    camera.position.z += (tg.pos[2] - camera.position.z) * k;
+    camera.rotation.order = "YXZ";
+    let dy = tg.yaw - camera.rotation.y;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    camera.rotation.y += dy * k;
+    camera.rotation.x += (tg.pitch - camera.rotation.x) * k;
+    camera.rotation.z = 0;
+  });
+  return null;
+}
+
+type FocusMeta = {
+  cx: number;
+  cz: number;
+  nx: number; // inward wall normal (toward room centre)
+  subject: ArtSubject;
+  title: string;
+};
+
+// Approach-to-contemplate: stand close to a work and face it, and the room
+// hushes and darkens around it while its own soundscape rises — the world
+// falling away from the thing you're looking at.
+function Contemplate({
+  enabledRef,
+  hangs,
+  locale,
+  onScene,
+  onArtwork,
+  onFocus,
+}: {
+  enabledRef: React.RefObject<boolean>;
+  hangs: Hang[];
+  locale: Locale;
+  onScene: (s: Scene) => void;
+  onArtwork: (s: ArtSubject | null) => void;
+  onFocus: (title: string | null) => void;
+}) {
+  const { camera, gl, scene } = useThree();
+  const metas = useMemo<FocusMeta[]>(
+    () =>
+      hangs.map((h) => ({
+        cx: h.position[0],
+        cz: h.position[2],
+        nx: h.rotation[1] > 0 ? 1 : -1,
+        subject: classifySubject(`${h.p.title} ${h.p.story ?? ""}`),
+        title: localized(locale, h.p.i18n, "title", h.p.title) ?? h.p.title,
+      })),
+    [hangs, locale],
+  );
+  const f = useRef(0);
+  const fwd = useRef(new THREE.Vector3());
+  const baseExp = useRef<number | null>(null);
+  const prevEnabled = useRef(false);
+  const lastScene = useRef<Scene | null>(null);
+  const lastTitle = useRef<string | null>(null);
+
+  useFrame((state, dt) => {
+    const enabled = enabledRef.current;
+    const justEnabled = enabled && !prevEnabled.current;
+    const justDisabled = !enabled && prevEnabled.current;
+    prevEnabled.current = enabled;
+    if (justEnabled) lastScene.current = null; // re-assert after an overlay
+    if (justDisabled) {
+      lastTitle.current = null;
+      onFocus(null);
+    }
+
+    let target = 0;
+    let best: FocusMeta | null = null;
+    if (enabled && metas.length) {
+      camera.getWorldDirection(fwd.current);
+      const fx = fwd.current.x;
+      const fz = fwd.current.z;
+      const flen = Math.hypot(fx, fz) || 1;
+      let bestScore = -1;
+      for (const m of metas) {
+        const dx = m.cx - camera.position.x;
+        const dz = m.cz - camera.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.4 || m.nx * dx >= 0) continue; // must be on the room side
+        const dot = (fx * dx + fz * dz) / (flen * dist);
+        const near = dist < (lastScene.current === "artview" ? 4.0 : 3.1);
+        const facing = dot > (lastScene.current === "artview" ? 0.55 : 0.72);
+        if (near && facing && dot > bestScore) {
+          bestScore = dot;
+          best = m;
+        }
+      }
+      target = best ? 1 : 0;
+    }
+
+    if (enabled) {
+      const want: Scene = target === 1 ? "artview" : "gallery";
+      if (want !== lastScene.current) {
+        lastScene.current = want;
+        onArtwork(want === "artview" && best ? best.subject : null);
+        const title = want === "artview" && best ? best.title : null;
+        lastTitle.current = title;
+        onFocus(title);
+        onScene(want);
+      } else if (want === "artview" && best && best.title !== lastTitle.current) {
+        lastTitle.current = best.title; // slid to an adjacent work
+        onArtwork(best.subject);
+        onFocus(best.title);
+      }
+    }
+
+    f.current += (target - f.current) * Math.min(1, dt * 2.2);
+
+    // Only touch the lights while contemplating (or easing back out) — never
+    // during the intro, where IntroCamera owns the lighting ramp.
+    if (enabled || f.current > 0.001) {
+      // dim the fill so the lit canvas glows; lift exposure a touch with it
+      const k = 1 - 0.5 * f.current;
+      scene.traverse((o) => {
+        const L = o as THREE.Light & {
+          isAmbientLight?: boolean;
+          isHemisphereLight?: boolean;
+        };
+        if (L.isAmbientLight || L.isHemisphereLight || L.userData?.dimmable) {
+          if (L.userData.dimBase === undefined) L.userData.dimBase = L.intensity;
+          L.intensity = (L.userData.dimBase as number) * k;
+        }
+      });
+      if (baseExp.current === null) baseExp.current = gl.toneMappingExposure;
+      gl.toneMappingExposure = baseExp.current * (1 + 0.12 * f.current);
+    }
+  });
+
+  return null;
+}
+
 export default function Gallery({
   museum,
   artist,
@@ -1891,12 +2076,20 @@ export default function Gallery({
     : museum.signature;
   const t = useT();
   const { locale } = useLocale();
-  const { setScene: setAudioScene, setFacing, setDepth, step, setArtwork } =
-    useAudio();
+  const {
+    setScene: setAudioScene,
+    setFacing,
+    setDepth,
+    step,
+    setArtwork,
+    setDucked,
+    setRoomSize,
+  } = useAudio();
   useEffect(() => {
     setAudioScene("gallery");
+    setRoomSize(depth);
     return () => setAudioScene("off");
-  }, [setAudioScene]);
+  }, [setAudioScene, setRoomSize, depth]);
   const [inspect, setInspect] = useState<Painting | null>(null);
   const [fullscreen, setFullscreen] = useState<Painting | null>(null);
   const lastClick = useRef(0);
@@ -1908,6 +2101,18 @@ export default function Gallery({
   const [coarse, setCoarse] = useState(false);
   const [traveling, setTraveling] = useState(false);
   const router = useRouter();
+
+  // guided tour + approach-to-contemplate
+  const tourStops = useMemo(() => buildTourStops(hangs, locale), [hangs, locale]);
+  const [tour, setTour] = useState(false);
+  const [tourIdx, setTourIdx] = useState(0);
+  const [focusTitle, setFocusTitle] = useState<string | null>(null);
+  const tourActive = useRef(false);
+  const tourTarget = useRef<TourStop | null>(null);
+  const tourAudio = useRef<HTMLAudioElement | null>(null);
+  const tourTimer = useRef<number | undefined>(undefined);
+  const contemplateOn = useRef(false);
+  const visitorCount = Math.min(6, Math.max(3, Math.round(depth / 7)));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dofRef = useRef<any>(null);
 
@@ -1933,9 +2138,10 @@ export default function Gallery({
   }, []);
 
   useEffect(() => {
-    moving.current = phase === 2 && !inspect;
-    looking.current = phase === 2;
-  }, [phase, inspect]);
+    moving.current = phase === 2 && !inspect && !tour;
+    looking.current = phase === 2 && !tour;
+    contemplateOn.current = phase === 2 && !inspect && !fullscreen && !tour;
+  }, [phase, inspect, fullscreen, tour]);
 
   // a shared deep link (?work=<id>) opens straight to that painting
   useEffect(() => {
@@ -1945,16 +2151,14 @@ export default function Gallery({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openWorkId]);
 
-  // standing before a single work → the art view (binaural tone) and that
-  // painting's own soundscape; back to the room when you leave it.
+  // opening a single work → the art view (binaural tone) and that painting's
+  // soundscape. On close, Contemplate re-asserts the room (or keeps the art
+  // view if you're still standing before the work), so no reset is needed here.
   useEffect(() => {
     const p = inspect ?? fullscreen;
     if (p) {
       setAudioScene("artview");
       setArtwork(classifySubject(`${p.title} ${p.story ?? ""}`));
-    } else {
-      setAudioScene("gallery");
-      setArtwork(null);
     }
   }, [inspect, fullscreen, setAudioScene, setArtwork]);
 
@@ -1987,7 +2191,7 @@ export default function Gallery({
   // single click opens the inspector; a quick second click (double-click) on a
   // painting jumps straight to full screen.
   const onInspect = (p: Painting) => {
-    if (didDrag.current) return;
+    if (didDrag.current || tourActive.current) return;
     const now = performance.now();
     if (now - lastClick.current < 320) {
       setInspect(null);
@@ -1997,6 +2201,142 @@ export default function Gallery({
     }
     lastClick.current = now;
   };
+
+  // ── Guided tour orchestration ──────────────────────────────────────────
+  const clearTourTimer = () => {
+    if (tourTimer.current !== undefined) {
+      window.clearTimeout(tourTimer.current);
+      tourTimer.current = undefined;
+    }
+  };
+  const stopTourAudio = () => {
+    if (tourAudio.current) {
+      tourAudio.current.onended = null;
+      tourAudio.current.onerror = null;
+      tourAudio.current.pause();
+      tourAudio.current.src = "";
+      tourAudio.current = null;
+    }
+    window.speechSynthesis?.cancel();
+  };
+
+  function endTour() {
+    tourActive.current = false;
+    clearTourTimer();
+    stopTourAudio();
+    setDucked(false);
+    setArtwork(null);
+    setAudioScene("gallery");
+    setTour(false);
+    setFocusTitle(null);
+    moving.current = true;
+    looking.current = true;
+    contemplateOn.current = true;
+  }
+
+  function nextStop(from: number) {
+    if (!tourActive.current) return;
+    clearTourTimer();
+    setDucked(false);
+    const n = from + 1;
+    if (n >= tourStops.length) endTour();
+    else goToStop(n);
+  }
+
+  function playNarration(i: number) {
+    if (!tourActive.current) return;
+    const s = tourStops[i];
+    if (!s) return;
+    setDucked(true);
+    const el = new Audio(`/api/narrate?id=${s.painting.id}&lang=${locale}`);
+    el.volume = getGuideVolume();
+    tourAudio.current = el;
+    const finish = () => {
+      if (tourAudio.current === el) tourAudio.current = null;
+      nextStop(i);
+    };
+    let fellBack = false;
+    const fallback = () => {
+      if (fellBack || !tourActive.current) return;
+      fellBack = true;
+      if (tourAudio.current === el) tourAudio.current = null;
+      const synth = window.speechSynthesis;
+      const text = localized(locale, s.painting.i18n, "story", s.painting.story);
+      if (synth && text) {
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = BCP47[locale];
+        u.rate = 0.96;
+        u.volume = getGuideVolume();
+        const v = synth
+          .getVoices()
+          .find((x) => x.lang?.toLowerCase().startsWith(locale));
+        if (v) u.voice = v;
+        u.onend = () => nextStop(i);
+        u.onerror = () => nextStop(i);
+        synth.speak(u);
+        tourTimer.current = window.setTimeout(() => {
+          synth.cancel();
+          nextStop(i);
+        }, 40000);
+      } else {
+        tourTimer.current = window.setTimeout(() => nextStop(i), 6000);
+      }
+    };
+    el.onended = finish;
+    el.onerror = fallback;
+    el.play().catch(fallback);
+    // hard safety cap against a stalled stream
+    tourTimer.current = window.setTimeout(() => {
+      if (tourActive.current) {
+        stopTourAudio();
+        nextStop(i);
+      }
+    }, 48000);
+  }
+
+  function goToStop(i: number) {
+    if (!tourActive.current) return;
+    clearTourTimer();
+    stopTourAudio();
+    setDucked(false);
+    const s = tourStops[i];
+    if (!s) {
+      endTour();
+      return;
+    }
+    setTourIdx(i);
+    setFocusTitle(s.title);
+    tourTarget.current = s;
+    tourTimer.current = window.setTimeout(() => playNarration(i), 2600);
+  }
+
+  function startTour() {
+    if (tourActive.current || !tourStops.length) return;
+    setInspect(null);
+    setFullscreen(null);
+    tourActive.current = true;
+    moving.current = false;
+    looking.current = false;
+    contemplateOn.current = false;
+    setTour(true);
+    setAudioScene("gallery");
+    goToStop(0);
+  }
+
+  // stop any tour audio/timers if the gallery unmounts mid-tour
+  useEffect(
+    () => () => {
+      tourActive.current = false;
+      if (tourTimer.current !== undefined) window.clearTimeout(tourTimer.current);
+      if (tourAudio.current) {
+        tourAudio.current.pause();
+        tourAudio.current = null;
+      }
+      window.speechSynthesis?.cancel();
+    },
+    [],
+  );
 
   return (
     <div
@@ -2041,11 +2381,14 @@ export default function Gallery({
                 distance={16}
                 decay={2}
                 color={museum.ceilLightColor}
+                userData={{ dimmable: true }}
               />
             );
           },
         )}
         <Room museum={museum} depth={depth} />
+        <Atmosphere museum={museum} depth={depth} />
+        <Visitors depth={depth} roomWidth={museum.roomWidth} count={visitorCount} />
         <DescriptionWall
           museum={museum}
           artist={artist}
@@ -2102,6 +2445,15 @@ export default function Gallery({
           />
         )}
         <EyeFocus dofRef={dofRef} />
+        <Contemplate
+          enabledRef={contemplateOn}
+          hangs={hangs}
+          locale={locale}
+          onScene={setAudioScene}
+          onArtwork={setArtwork}
+          onFocus={setFocusTitle}
+        />
+        <TourCamera activeRef={tourActive} targetRef={tourTarget} />
 
         <EffectComposer>
           {/* gentle depth separation — the centre subject stays crisp */}
@@ -2154,11 +2506,43 @@ export default function Gallery({
         </div>
       </div>
 
-      {phase === 2 && !inspect && <HintBanner touch={coarse} />}
+      {phase === 2 && !inspect && !tour && <HintBanner touch={coarse} />}
 
-      {coarse && phase === 2 && !inspect && !fullscreen && (
+      {coarse && phase === 2 && !inspect && !fullscreen && !tour && (
         <MoveStick move={moveRef} accent={accent} />
       )}
+
+      {/* approach-to-contemplate: a quiet caption while you dwell on a work */}
+      {focusTitle && !tour && !inspect && !fullscreen && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center">
+          <span
+            className="font-display text-[19px] italic tracking-wide text-ink/85"
+            style={{ textShadow: "0 2px 14px rgba(0,0,0,0.7)" }}
+          >
+            {focusTitle}
+          </span>
+        </div>
+      )}
+
+      {/* launch the guided tour */}
+      {phase === 2 && !inspect && !fullscreen && !tour && !traveling && tourStops.length > 0 && (
+        <button
+          onClick={startTour}
+          className="pointer-events-auto absolute bottom-7 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-[12px] uppercase tracking-[0.2em] backdrop-blur transition-colors"
+          style={{
+            borderColor: `${accent}66`,
+            color: accent,
+            background: "rgba(8,7,5,0.5)",
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          {t("tour")}
+        </button>
+      )}
+
+      {tour && <TourBar idx={tourIdx} total={tourStops.length} title={focusTitle} accent={accent} onNext={() => nextStop(tourIdx)} onEnd={endTour} />}
 
       {inspect && (
         <InspectOverlay
@@ -2208,6 +2592,56 @@ function FadeIn() {
         transition: "opacity 0.7s ease",
       }}
     />
+  );
+}
+
+function TourBar({
+  idx,
+  total,
+  title,
+  accent,
+  onNext,
+  onEnd,
+}: {
+  idx: number;
+  total: number;
+  title: string | null;
+  accent: string;
+  onNext: () => void;
+  onEnd: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-7 flex justify-center px-4">
+      <div className="pointer-events-auto flex items-center gap-4 rounded-full border border-white/15 bg-black/55 px-5 py-2.5 backdrop-blur">
+        <span
+          className="text-[11px] tabular-nums tracking-[0.2em]"
+          style={{ color: accent }}
+        >
+          {idx + 1} / {total}
+        </span>
+        {title && (
+          <span className="max-w-[44vw] truncate font-display text-[15px] italic text-ink">
+            {title}
+          </span>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNext}
+            className="rounded-full border border-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.15em] text-ink-soft transition-colors hover:text-ink"
+          >
+            {t("tourNext")}
+          </button>
+          <button
+            onClick={onEnd}
+            className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]"
+            style={{ color: accent }}
+          >
+            {t("tourEnd")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
