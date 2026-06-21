@@ -28,10 +28,14 @@ export default function InspectOverlay({
   painting,
   accent,
   onClose,
+  artistName,
+  museumName,
 }: {
   painting: Painting;
   accent: string;
   onClose: () => void;
+  artistName?: string;
+  museumName?: string;
 }) {
   const [shown, setShown] = useState(false);
   const [fs, setFs] = useState(false);
@@ -214,7 +218,12 @@ export default function InspectOverlay({
       </div>
 
       {fs && (
-        <FullscreenViewer painting={painting} onClose={() => setFs(false)} />
+        <FullscreenViewer
+          painting={painting}
+          onClose={() => setFs(false)}
+          artistName={artistName}
+          museumName={museumName}
+        />
       )}
     </div>
   );

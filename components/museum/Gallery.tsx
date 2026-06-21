@@ -2844,6 +2844,8 @@ export default function Gallery({
           painting={inspect}
           accent={accent}
           onClose={() => setInspect(null)}
+          artistName={localized(locale, artist.i18n, "name", artist.name) ?? artist.name}
+          museumName={museum.name}
         />
       )}
 
@@ -2859,6 +2861,8 @@ export default function Gallery({
           guideAudioRef={tourAudio}
           guidePaused={tourPaused}
           onGuideToggle={toggleGuidePause}
+          artistName={localized(locale, artist.i18n, "name", artist.name) ?? artist.name}
+          museumName={museum.name}
         />
       )}
 

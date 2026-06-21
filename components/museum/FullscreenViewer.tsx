@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Painting } from "@/db/schema";
-import { useT } from "@/components/LocaleProvider";
+import { useLocale, useT } from "@/components/LocaleProvider";
+import { localized } from "@/lib/i18n";
+import AskDocent from "@/components/museum/AskDocent";
 
 const PRESETS = [
   { key: "original", label: "Original", filter: "none" },
@@ -61,6 +63,8 @@ export default function FullscreenViewer({
   guideAudioRef,
   guidePaused = false,
   onGuideToggle,
+  artistName,
+  museumName,
 }: {
   painting: Painting;
   onClose: () => void;
@@ -68,8 +72,13 @@ export default function FullscreenViewer({
   guideAudioRef?: React.RefObject<HTMLAudioElement | null>;
   guidePaused?: boolean;
   onGuideToggle?: () => void;
+  artistName?: string;
+  museumName?: string;
 }) {
   const t = useT();
+  const { locale } = useLocale();
+  const workTitle =
+    localized(locale, painting.i18n, "title", painting.title) ?? painting.title;
   const [preset, setPreset] = useState("original");
   const [loading, setLoading] = useState(true);
   const [guideProgress, setGuideProgress] = useState(0);
@@ -300,6 +309,15 @@ export default function FullscreenViewer({
       >
         ×
       </button>
+
+      {/* ask the docent about the work you're studying up close */}
+      {artistName && museumName && (
+        <AskDocent
+          artist={artistName}
+          museum={museumName}
+          getWork={() => workTitle}
+        />
+      )}
     </div>
   );
 }
