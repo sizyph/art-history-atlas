@@ -1,9 +1,13 @@
 import type { NextRequest } from "next/server";
-import { ask, askConfigured, type AskContext } from "@/lib/ask";
+import { ask, askConfigured, type AskContext, type AskResult } from "@/lib/ask";
 import { LOCALES, type Locale } from "@/lib/i18n";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Warm-lambda cache: identical questions (same language + work) reuse the answer
+// instead of spending another model call — gentler on the free-tier quota.
+const mem = new Map<string, AskResult>();
 
 export async function POST(req: NextRequest) {
   // No key yet → the client shows a graceful "ask unavailable" message.
@@ -28,10 +32,21 @@ export async function POST(req: NextRequest) {
     museum: body.museum ? String(body.museum).slice(0, 120) : undefined,
     work: body.work ? String(body.work).slice(0, 160) : undefined,
   };
+
+  const cacheKey = `${lang}:${ctx.work ?? ""}:${question.toLowerCase()}`;
+  const hit = mem.get(cacheKey);
+  if (hit) return Response.json(hit);
+
   try {
     const result = await ask(question, ctx, lang);
+    if (mem.size > 80) mem.clear();
+    mem.set(cacheKey, result);
     return Response.json(result);
-  } catch {
-    return new Response("ask failed", { status: 502 });
+  } catch (e) {
+    // 429 from the model → tell the client the docent is busy, not broken.
+    const busy = e instanceof Error && e.message === "rate_limited";
+    return new Response(busy ? "busy" : "ask failed", {
+      status: busy ? 429 : 502,
+    });
   }
 }

@@ -59,6 +59,7 @@ const en: Dict = {
   askAgain: "Ask again",
   askPlaceholder: "Ask about art, an artist, a movement…",
   askError: "I couldn't reach an answer just now. Try again.",
+  askBusy: "The docent is fielding many questions — give it a moment and ask again.",
   askSources: "Sources",
 };
 
@@ -112,6 +113,7 @@ const fr: Dict = {
   askAgain: "Reposer une question",
   askPlaceholder: "Posez une question sur l’art, un artiste, un mouvement…",
   askError: "Je n’ai pas pu obtenir de réponse. Réessayez.",
+  askBusy: "Le guide répond à de nombreuses questions — patientez un instant puis réessayez.",
   askSources: "Sources",
 };
 
@@ -165,6 +167,7 @@ const ja: Dict = {
   askAgain: "もう一度尋ねる",
   askPlaceholder: "美術・画家・様式について質問…",
   askError: "回答を取得できませんでした。もう一度お試しください。",
+  askBusy: "ガイドは多くの質問に対応中です。少し待ってからもう一度お試しください。",
   askSources: "出典",
 };
 

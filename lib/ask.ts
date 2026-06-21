@@ -65,6 +65,9 @@ export async function ask(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  // The free tier has a per-minute / per-day cap; surface that distinctly so the
+  // docent can say "I'm busy, try again" rather than "something broke".
+  if (res.status === 429) throw new Error("rate_limited");
   if (!res.ok) throw new Error(`gemini ${res.status}`);
 
   const data = await res.json();

@@ -42,6 +42,7 @@ export default function AskDocent({
   const [sources, setSources] = useState<Source[]>([]);
   const [typed, setTyped] = useState("");
   const [speaking, setSpeaking] = useState(false);
+  const [errKey, setErrKey] = useState<"askError" | "askBusy">("askError");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
@@ -138,6 +139,13 @@ export default function AskDocent({
           work: getWork() ?? undefined,
         }),
       });
+      if (res.status === 429) {
+        if (openRef.current) {
+          setErrKey("askBusy");
+          setPhase("error");
+        }
+        return;
+      }
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { answer: string; sources: Source[] };
       if (!openRef.current) return;
@@ -150,7 +158,10 @@ export default function AskDocent({
         setSpeaking(false);
       }
     } catch {
-      if (openRef.current) setPhase("error");
+      if (openRef.current) {
+        setErrKey("askError");
+        setPhase("error");
+      }
     }
   };
 
@@ -485,7 +496,7 @@ export default function AskDocent({
 
       {phase === "error" && (
         <div className="flex flex-col gap-2">
-          <p className="text-[13px] text-ink-soft">{t("askError")}</p>
+          <p className="text-[13px] text-ink-soft">{t(errKey)}</p>
           <button
             onClick={askAgain}
             className="self-start rounded-full px-4 py-1.5 text-[12px] uppercase tracking-[0.15em]"
