@@ -4,8 +4,14 @@ import { useEffect, useState } from "react";
 import { useT } from "@/components/LocaleProvider";
 
 // Toggle the whole page in and out of full screen (with the WebKit fallback).
-// Global: sits bottom-left on every view, opposite the sound control.
-export default function FullscreenButton() {
+// Global: sits bottom-left on every view, opposite the sound control. A
+// `className` override lets the deep-zoom place its own copy (the global one
+// sits behind that overlay).
+export default function FullscreenButton({
+  className,
+}: {
+  className?: string;
+} = {}) {
   const t = useT();
   const [fs, setFs] = useState(false);
   const [coarse, setCoarse] = useState(false);
@@ -58,7 +64,10 @@ export default function FullscreenButton() {
       onClick={toggle}
       aria-label={fs ? t("exitFullscreen") : t("fullscreen")}
       title={fs ? t("exitFullscreen") : t("fullscreen")}
-      className="pointer-events-auto fixed bottom-5 left-5 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-black/40 text-ink-soft backdrop-blur transition-colors hover:text-ink"
+      className={
+        className ??
+        "pointer-events-auto fixed bottom-5 left-5 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-black/40 text-ink-soft backdrop-blur transition-colors hover:text-ink"
+      }
     >
       <svg
         width="15"

@@ -5,6 +5,7 @@ import type { Painting } from "@/db/schema";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { localized } from "@/lib/i18n";
 import AskDocent from "@/components/museum/AskDocent";
+import FullscreenButton from "@/components/FullscreenButton";
 
 const PRESETS = [
   { key: "original", label: "Original", filter: "none" },
@@ -309,6 +310,10 @@ export default function FullscreenViewer({
       >
         ×
       </button>
+
+      {/* browser full-screen toggle (the global one sits behind this overlay) —
+          top-left, mirroring the close button */}
+      <FullscreenButton className="pointer-events-auto absolute left-5 top-4 z-[60] flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white/70 backdrop-blur transition-colors hover:text-white" />
 
       {/* ask the docent about the work you're studying up close */}
       {artistName && museumName && (
