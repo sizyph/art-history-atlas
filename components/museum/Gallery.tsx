@@ -491,8 +491,28 @@ function PaintingFrame({
   let h: number;
   let yOffset = 0;
   if (hang.p.width && hang.p.height) {
-    const rw = hang.p.width / 100;
-    const rh = hang.p.height / 100;
+    let rw = hang.p.width / 100;
+    let rh = hang.p.height / 100;
+    // Stored dimensions are occasionally mis-transcribed (e.g. Caravaggio's
+    // "Martyrdom of Saint Matthew" as 323×49 instead of 323×343), which would
+    // render the frame at a wildly wrong shape. The loaded image's own pixel
+    // aspect is authoritative: when the two disagree badly, keep the larger
+    // stored side as the true longest edge and rebuild the other from the image.
+    if (img && img.width && img.height) {
+      const imgA = img.width / img.height;
+      const declA = rw / rh;
+      const r = declA / imgA;
+      if (r > 1.5 || r < 1 / 1.5) {
+        const M = Math.max(rw, rh);
+        if (imgA >= 1) {
+          rw = M;
+          rh = M / imgA;
+        } else {
+          rh = M;
+          rw = M * imgA;
+        }
+      }
+    }
     const longest = Math.max(rw, rh);
     const k = Math.min(Math.max(longest, 0.45), 3.3) / longest;
     w = rw * k;
