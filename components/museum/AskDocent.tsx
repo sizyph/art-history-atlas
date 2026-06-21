@@ -4,17 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
 import { getGuideVolume } from "@/lib/guideAudio";
-import { type Locale } from "@/lib/i18n";
+import { ASK_GREETINGS, type Locale } from "@/lib/i18n";
 
 const BCP47: Record<Locale, string> = { en: "en-US", fr: "fr-FR", ja: "ja-JP" };
 const SILENCE_MS = 4000;
 
-type Phase = "idle" | "listening" | "thinking" | "answering" | "error";
+type Phase = "intro" | "listening" | "thinking" | "answering" | "error";
 type Source = { title: string; uri: string };
 
-// A spoken docent: tap the "?", it asks aloud, listens (auto-stops after 4s of
-// silence), answers with a free LLM + web search, and reads the reply in the
-// same neural Ava voice — with the text and sources on a card.
+// A docent you can speak to or type to. Tap "?", it greets you aloud (a varied,
+// immersive line), then listens — auto-stopping after 4s of silence, or when you
+// press Stop, either of which sends the question. You can also just type. Spoken
+// questions are answered aloud in the Ava voice; typed ones answer in text with
+// a Listen button. Answers cite their web sources when the model searched.
 export default function AskDocent({
   artist,
   museum,
@@ -29,17 +31,21 @@ export default function AskDocent({
   const { setDucked } = useAudio();
 
   const [open, setOpen] = useState(false);
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState<Phase>("intro");
+  const [greeting, setGreeting] = useState("");
   const [transcript, setTranscript] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [typed, setTyped] = useState("");
+  const [speaking, setSpeaking] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const silence = useRef<number | undefined>(undefined);
-  const finalRef = useRef("");
+  const transcriptRef = useRef(""); // live, so Stop/auto-stop always have the text
+  const submittedRef = useRef(false); // one answer per question (Stop + onend race)
+  const abortRef = useRef(false); // closing/typing — don't auto-submit on end
   const openRef = useRef(false);
 
   const supported =
@@ -62,23 +68,27 @@ export default function AskDocent({
       audioRef.current = null;
     }
     setDucked(false);
+    setSpeaking(false);
   };
 
-  const stopRec = () => {
+  const teardownRec = (abort: boolean) => {
     clearSilence();
-    if (recRef.current) {
-      try {
-        recRef.current.onend = null;
-        recRef.current.onresult = null;
-        recRef.current.onerror = null;
-        recRef.current.stop();
-      } catch {}
-      recRef.current = null;
+    const rec = recRef.current;
+    recRef.current = null;
+    if (!rec) return;
+    if (abort) {
+      rec.onend = null;
+      rec.onresult = null;
+      rec.onerror = null;
     }
+    try {
+      if (abort) rec.abort();
+      else rec.stop();
+    } catch {}
   };
 
-  // Speak text in the Ava voice; resolves when finished (or immediately if TTS
-  // is unavailable). Ducks the soundscape while it plays.
+  // Speak text in the Ava voice; resolves when finished (or at once if TTS is
+  // unavailable). Ducks the soundscape while it plays.
   const speak = (text: string) =>
     new Promise<void>((resolve) => {
       const el = new Audio();
@@ -110,19 +120,14 @@ export default function AskDocent({
         });
     });
 
-  const submit = async (question: string) => {
-    const q = question.trim();
-    if (!q) {
-      setPhase("idle");
-      return;
-    }
+  const runAnswer = async (question: string, viaVoice: boolean) => {
     setPhase("thinking");
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question: q,
+          question,
           lang: locale,
           artist,
           museum,
@@ -135,10 +140,23 @@ export default function AskDocent({
       setAnswer(data.answer);
       setSources(data.sources ?? []);
       setPhase("answering");
-      await speak(data.answer);
+      if (viaVoice) {
+        setSpeaking(true);
+        await speak(data.answer);
+        setSpeaking(false);
+      }
     } catch {
       if (openRef.current) setPhase("error");
     }
+  };
+
+  // Exactly one answer per question, whichever trigger fires first.
+  const submitOnce = (question: string, viaVoice: boolean) => {
+    const q = question.trim();
+    if (!q || submittedRef.current) return;
+    submittedRef.current = true;
+    abortRef.current = true; // any trailing onend won't re-submit
+    void runAnswer(q, viaVoice);
   };
 
   const startListening = () => {
@@ -153,15 +171,18 @@ export default function AskDocent({
     rec.lang = BCP47[locale];
     rec.continuous = true;
     rec.interimResults = true;
-    finalRef.current = "";
+    transcriptRef.current = "";
+    submittedRef.current = false;
+    abortRef.current = false;
     setTranscript("");
     setPhase("listening");
 
+    let finalText = "";
     const armSilence = () => {
       clearSilence();
       silence.current = window.setTimeout(() => {
         try {
-          rec.stop();
+          rec.stop(); // → onend → submit
         } catch {}
       }, SILENCE_MS);
     };
@@ -171,31 +192,49 @@ export default function AskDocent({
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const txt = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finalRef.current += txt;
+        if (e.results[i].isFinal) finalText += txt;
         else interim += txt;
       }
-      setTranscript((finalRef.current + interim).trim());
+      const combined = (finalText + interim).trim();
+      transcriptRef.current = combined;
+      setTranscript(combined);
       armSilence();
     };
-    rec.onerror = () => {
-      clearSilence();
-    };
+    rec.onerror = () => clearSilence();
     rec.onend = () => {
       clearSilence();
       recRef.current = null;
-      if (!openRef.current) return;
-      const q = finalRef.current.trim() || transcript.trim();
-      if (q) submit(q);
-      else setPhase("idle");
+      if (abortRef.current || !openRef.current) return;
+      const q = transcriptRef.current.trim();
+      if (q) submitOnce(q, true);
+      else setPhase("intro");
     };
 
     recRef.current = rec;
     try {
       rec.start();
-      armSilence(); // autostop even if the visitor says nothing
+      armSilence(); // auto-stop even if nothing is ever said
     } catch {
-      setPhase("idle");
+      setPhase("intro");
     }
+  };
+
+  // The Stop button (and the mic toggle while active): answer with what we have.
+  const stopAndAnswer = () => {
+    clearSilence();
+    const q = transcriptRef.current.trim();
+    teardownRec(false); // graceful stop; onend would also fire
+    if (q) submitOnce(q, true);
+    else setPhase("intro");
+  };
+
+  const submitTyped = () => {
+    const q = typed.trim();
+    if (!q) return;
+    stopAudio();
+    teardownRec(true);
+    submittedRef.current = false;
+    submitOnce(q, false);
   };
 
   const begin = async () => {
@@ -204,19 +243,33 @@ export default function AskDocent({
     setAnswer("");
     setSources([]);
     setTranscript("");
+    setTyped("");
+    submittedRef.current = false;
+    abortRef.current = false;
+    const pool = ASK_GREETINGS[locale] ?? ASK_GREETINGS.en;
+    const g = pool[Math.floor(Math.random() * pool.length)];
+    setGreeting(g);
+    setPhase("intro");
     if (supported) {
-      await speak(t("askPrompt"));
-      if (openRef.current) startListening();
-    } else {
-      setPhase("idle"); // text-input fallback shows
+      await speak(g);
+      // unless the visitor started typing meanwhile, open the mic
+      if (openRef.current && !abortRef.current && !transcriptRef.current) {
+        startListening();
+      }
     }
   };
 
+  const askAgain = () => {
+    stopAudio();
+    begin();
+  };
+
   const close = () => {
+    abortRef.current = true;
     openRef.current = false;
     setOpen(false);
-    setPhase("idle");
-    stopRec();
+    setPhase("intro");
+    teardownRec(true);
     stopAudio();
     setTranscript("");
     setTyped("");
@@ -224,9 +277,10 @@ export default function AskDocent({
 
   useEffect(() => {
     return () => {
+      abortRef.current = true;
       openRef.current = false;
       clearSilence();
-      stopRec();
+      teardownRec(true);
       stopAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,7 +292,7 @@ export default function AskDocent({
         onClick={begin}
         aria-label={t("ask")}
         title={t("ask")}
-        className="pointer-events-auto absolute right-6 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-xl text-ink backdrop-blur transition-colors hover:bg-black/65"
+        className="pointer-events-auto absolute right-6 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-ink backdrop-blur transition-colors hover:bg-black/65"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2.5-3 4" />
@@ -249,8 +303,9 @@ export default function AskDocent({
   }
 
   const listening = phase === "listening";
+  const inputStage = phase === "intro" || phase === "listening";
   return (
-    <div className="pointer-events-auto absolute right-6 top-1/2 z-30 flex w-[340px] max-w-[86vw] -translate-y-1/2 flex-col gap-3 rounded-2xl border border-white/15 bg-black/70 p-4 backdrop-blur">
+    <div className="pointer-events-auto absolute right-6 top-1/2 z-30 flex w-[360px] max-w-[88vw] -translate-y-1/2 flex-col gap-3 rounded-2xl border border-white/15 bg-black/75 p-4 backdrop-blur">
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-[0.22em] text-ink-faint">
           {t("ask")}
@@ -264,62 +319,70 @@ export default function AskDocent({
         </button>
       </div>
 
-      {(listening || phase === "idle") && supported && (
+      {inputStage && (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <span
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                listening ? "animate-pulse bg-[var(--gold)]/25" : "bg-white/10"
-              }`}
+          <p className="text-[13px] leading-relaxed text-ink-soft">
+            {listening && transcript ? (
+              <span className="italic text-ink">“{transcript}”</span>
+            ) : (
+              greeting || t("askPrompt")
+            )}
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onFocus={() => {
+                // typing takes over from the mic
+                if (recRef.current) {
+                  abortRef.current = true;
+                  teardownRec(true);
+                  setPhase("intro");
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitTyped();
+              }}
+              placeholder={t("askPlaceholder")}
+              className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-white/35"
+            />
+            {supported && (
+              <button
+                onClick={listening ? stopAndAnswer : startListening}
+                aria-label={listening ? t("askStop") : t("ask")}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  listening
+                    ? "animate-pulse border-[var(--gold)] bg-[var(--gold)]/25"
+                    : "border-white/15 hover:bg-white/10"
+                }`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 10a7 7 0 0 0 14 0M12 19v3" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={submitTyped}
+              aria-label={t("ask")}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              style={{ background: "var(--gold)", color: "#15120E" }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="2" width="6" height="12" rx="3" />
-                <path d="M5 10a7 7 0 0 0 14 0M12 19v3" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M13 6l6 6-6 6" />
               </svg>
-            </span>
-            <span className="text-[13px] text-ink-soft">
-              {listening ? t("askListening") : t("askPrompt")}
-            </span>
+            </button>
           </div>
-          {transcript && (
-            <p className="text-[14px] italic leading-relaxed text-ink">
-              “{transcript}”
-            </p>
-          )}
           {listening && (
             <button
-              onClick={stopRec}
+              onClick={stopAndAnswer}
               className="self-start rounded-full border border-white/15 px-3.5 py-1.5 text-[12px] uppercase tracking-[0.15em] text-ink-soft transition-colors hover:text-ink"
             >
               {t("askStop")}
             </button>
           )}
         </div>
-      )}
-
-      {!supported && phase !== "thinking" && phase !== "answering" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit(typed);
-          }}
-          className="flex flex-col gap-2"
-        >
-          <input
-            autoFocus
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            placeholder={t("askPlaceholder")}
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-white/35"
-          />
-          <button
-            type="submit"
-            className="self-start rounded-full px-4 py-1.5 text-[12px] uppercase tracking-[0.15em]"
-            style={{ background: "var(--gold)", color: "#15120E" }}
-          >
-            {t("ask")}
-          </button>
-        </form>
       )}
 
       {phase === "thinking" && (
@@ -333,7 +396,7 @@ export default function AskDocent({
         <div className="flex flex-col gap-3">
           <div
             data-scroll-list
-            className="max-h-[40vh] overflow-y-auto pr-1 text-[14px] leading-relaxed text-ink [scrollbar-width:thin] [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20"
+            className="max-h-[42vh] overflow-y-auto pr-1 text-[14px] leading-relaxed text-ink [scrollbar-width:thin] [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20"
             style={{ overscrollBehavior: "contain" }}
           >
             {answer}
@@ -347,7 +410,7 @@ export default function AskDocent({
                   href={s.uri}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="max-w-[140px] truncate underline underline-offset-2 hover:text-ink-soft"
+                  className="max-w-[150px] truncate underline underline-offset-2 hover:text-ink-soft"
                 >
                   {s.title}
                 </a>
@@ -356,20 +419,25 @@ export default function AskDocent({
           )}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                stopAudio();
-                begin();
-              }}
+              onClick={askAgain}
               className="rounded-full px-4 py-1.5 text-[12px] uppercase tracking-[0.15em]"
               style={{ background: "var(--gold)", color: "#15120E" }}
             >
               {t("askAgain")}
             </button>
             <button
-              onClick={stopAudio}
+              onClick={async () => {
+                if (speaking) {
+                  stopAudio();
+                } else {
+                  setSpeaking(true);
+                  await speak(answer);
+                  setSpeaking(false);
+                }
+              }}
               className="rounded-full border border-white/15 px-3.5 py-1.5 text-[12px] uppercase tracking-[0.15em] text-ink-soft transition-colors hover:text-ink"
             >
-              {t("askStop")}
+              {speaking ? t("askStop") : t("listen")}
             </button>
           </div>
         </div>
@@ -379,7 +447,7 @@ export default function AskDocent({
         <div className="flex flex-col gap-2">
           <p className="text-[13px] text-ink-soft">{t("askError")}</p>
           <button
-            onClick={begin}
+            onClick={askAgain}
             className="self-start rounded-full px-4 py-1.5 text-[12px] uppercase tracking-[0.15em]"
             style={{ background: "var(--gold)", color: "#15120E" }}
           >

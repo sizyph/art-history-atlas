@@ -170,6 +170,38 @@ const ja: Dict = {
 
 export const DICT: Record<Locale, Dict> = { en, fr, ja };
 
+// Varied docent openings — spoken aloud when you open "Ask the docent", chosen
+// at random so the greeting never feels canned, and tuned for immersion.
+export const ASK_GREETINGS: Record<Locale, string[]> = {
+  en: [
+    "The gallery is yours — what would you like to know?",
+    "Ask me anything about the art around you.",
+    "I'm your guide today. What catches your eye?",
+    "Something here caught your curiosity? Ask away.",
+    "What shall we explore together?",
+    "Step closer and ask — a work, an artist, a movement.",
+    "Whenever you're ready — what would you like to discover?",
+  ],
+  fr: [
+    "La galerie est à vous — que souhaitez-vous savoir ?",
+    "Demandez-moi tout sur les œuvres qui vous entourent.",
+    "Je suis votre guide aujourd'hui. Qu'est-ce qui attire votre regard ?",
+    "Une œuvre a éveillé votre curiosité ? Je vous écoute.",
+    "Qu'allons-nous explorer ensemble ?",
+    "Approchez et demandez — une œuvre, un artiste, un mouvement.",
+    "Quand vous voulez — que souhaitez-vous découvrir ?",
+  ],
+  ja: [
+    "ギャラリーはあなたのもの。何を知りたいですか？",
+    "周りの作品について、何でもお尋ねください。",
+    "本日はご案内いたします。何が気になりますか？",
+    "気になる作品がありましたか？どうぞ。",
+    "一緒に何を探りましょうか？",
+    "近づいて、作品や画家、様式についてお尋ねください。",
+    "準備ができましたら——何を知りたいですか？",
+  ],
+};
+
 export function translate(
   locale: Locale,
   key: string,
