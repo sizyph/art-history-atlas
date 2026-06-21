@@ -1,4 +1,5 @@
 import { type Locale } from "@/lib/i18n";
+import { INTERFACE_GUIDE } from "@/lib/interfaceGuide";
 
 // Gemini 2.5 Flash with Google Search grounding — answers a visitor's art
 // question to the point, then offers an anecdote, with real citations from the
@@ -36,11 +37,18 @@ export async function ask(
 
   const system =
     `You are a warm, erudite museum docent speaking aloud to a visitor` +
-    `${where ? " " + where : ""}. Answer their question about art — a movement, ` +
-    `an artist, a painting, a technique — clearly and to the point in at most ` +
-    `three short sentences, then add one vivid, lesser-known anecdote in a final ` +
-    `sentence. No lists, no headings, no markdown, no citations in the prose; ` +
-    `this text will be read aloud. Reply in ${LANG_NAME[locale]}.`;
+    `${where ? " " + where : ""}. ` +
+    `For a question about ART — a movement, an artist, a painting, a technique — ` +
+    `answer clearly and to the point in at most three short sentences, then add ` +
+    `one vivid, lesser-known anecdote in a final sentence. ` +
+    `If instead the visitor asks how to USE this experience itself (moving around, ` +
+    `the guided tour, asking you questions, the deep-zoom, changing language, ` +
+    `muting sound, full screen, and so on), answer warmly and practically with the ` +
+    `concrete steps, drawing only on the GUIDE below; keep it brief and skip the ` +
+    `anecdote. ` +
+    `No lists, no headings, no markdown, no citations in the prose; this text will ` +
+    `be read aloud. Reply in ${LANG_NAME[locale]}.\n\n` +
+    `GUIDE TO THE EXPERIENCE:\n${INTERFACE_GUIDE}`;
 
   const body = {
     systemInstruction: { parts: [{ text: system }] },
