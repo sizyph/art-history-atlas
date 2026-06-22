@@ -24,15 +24,13 @@ export type AskContext = {
 };
 export type AskResult = { answer: string; sources: { title: string; uri: string }[] };
 
-export async function ask(
-  question: string,
+// The docent's instructions — shared by every provider so the voice stays the
+// same whichever brain answers.
+export function docentSystem(
   ctx: AskContext,
   locale: Locale,
-  image?: string, // base64 JPEG of the exact area in view (deep-zoom), no prefix
-): Promise<AskResult> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("not configured");
-
+  hasImage: boolean,
+): string {
   const where = [
     ctx.museum ? `at the ${ctx.museum}` : null,
     ctx.artist ? `in ${ctx.artist}'s gallery` : null,
@@ -42,13 +40,13 @@ export async function ask(
     .filter(Boolean)
     .join(", ");
 
-  const system =
+  return (
     `You are a warm, erudite museum docent speaking aloud to a visitor` +
     `${where ? " " + where : ""}. ` +
     `For a question about ART — a movement, an artist, a painting, a technique — ` +
     `answer clearly and to the point in at most three short sentences, then add ` +
     `one vivid, lesser-known anecdote in a final sentence. ` +
-    (image
+    (hasImage
       ? `An image is attached: it is the exact area of the painting the visitor is ` +
         `viewing right now in deep-zoom. When they say "this", "here", "who is this", ` +
         `or ask about a detail, they mean what is visible in that crop — answer about ` +
@@ -61,7 +59,20 @@ export async function ask(
     `anecdote. ` +
     `No lists, no headings, no markdown, no citations in the prose; this text will ` +
     `be read aloud. Reply in ${LANG_NAME[locale]}.\n\n` +
-    `GUIDE TO THE EXPERIENCE:\n${INTERFACE_GUIDE}`;
+    `GUIDE TO THE EXPERIENCE:\n${INTERFACE_GUIDE}`
+  );
+}
+
+export async function ask(
+  question: string,
+  ctx: AskContext,
+  locale: Locale,
+  image?: string, // base64 JPEG of the exact area in view (deep-zoom), no prefix
+): Promise<AskResult> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("not configured");
+
+  const system = docentSystem(ctx, locale, !!image);
 
   const parts: (
     | { text: string }

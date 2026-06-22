@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { ask, askConfigured, type AskContext, type AskResult } from "@/lib/ask";
+import { askGroq, groqConfigured } from "@/lib/askGroq";
 import { LOCALES, type Locale } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
 const mem = new Map<string, AskResult>();
 
 export async function POST(req: NextRequest) {
-  // No key yet → the client shows a graceful "ask unavailable" message.
-  if (!askConfigured()) {
+  // No brain configured at all → the client shows a graceful "unavailable".
+  if (!askConfigured() && !groqConfigured()) {
     return new Response("ask not configured", { status: 503 });
   }
   let body: Record<string, unknown>;
@@ -46,19 +47,37 @@ export async function POST(req: NextRequest) {
     if (hit) return Response.json(hit);
   }
 
-  try {
-    const result = await ask(question, ctx, lang, image);
-    image = undefined; // free the base64
+  // Gemini first (keeps web-search sources); on any failure — most often its
+  // small free-tier quota — fall back to Groq (free, higher limits, no sources).
+  let result: AskResult | null = null;
+  let primaryErr: unknown = null;
+  if (askConfigured()) {
+    try {
+      result = await ask(question, ctx, lang, image);
+    } catch (e) {
+      primaryErr = e;
+    }
+  }
+  if (!result && groqConfigured()) {
+    try {
+      result = await askGroq(question, ctx, lang, image);
+    } catch (e) {
+      if (!primaryErr) primaryErr = e;
+    }
+  }
+  image = undefined; // free the base64
+
+  if (result) {
     if (cacheKey) {
       if (mem.size > 80) mem.clear();
       mem.set(cacheKey, result);
     }
     return Response.json(result);
-  } catch (e) {
-    // 429 from the model → tell the client the docent is busy, not broken.
-    const busy = e instanceof Error && e.message === "rate_limited";
-    return new Response(busy ? "busy" : "ask failed", {
-      status: busy ? 429 : 502,
-    });
   }
+
+  // everything failed → tell the client the docent is busy, not broken
+  const busy = primaryErr instanceof Error && primaryErr.message === "rate_limited";
+  return new Response(busy ? "busy" : "ask failed", {
+    status: busy ? 429 : 502,
+  });
 }
