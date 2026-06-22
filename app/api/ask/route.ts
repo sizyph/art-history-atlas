@@ -31,16 +31,28 @@ export async function POST(req: NextRequest) {
     artist: body.artist ? String(body.artist).slice(0, 120) : undefined,
     museum: body.museum ? String(body.museum).slice(0, 120) : undefined,
     work: body.work ? String(body.work).slice(0, 160) : undefined,
+    region: body.region ? String(body.region).slice(0, 200) : undefined,
   };
+  // base64 JPEG of the exact deep-zoom view; ignore anything implausibly large
+  let image =
+    typeof body.image === "string" && body.image.length < 1_800_000
+      ? body.image
+      : undefined;
 
-  const cacheKey = `${lang}:${ctx.work ?? ""}:${question.toLowerCase()}`;
-  const hit = mem.get(cacheKey);
-  if (hit) return Response.json(hit);
+  // Cache only text answers — an attached view is specific to that moment.
+  const cacheKey = image ? null : `${lang}:${ctx.work ?? ""}:${question.toLowerCase()}`;
+  if (cacheKey) {
+    const hit = mem.get(cacheKey);
+    if (hit) return Response.json(hit);
+  }
 
   try {
-    const result = await ask(question, ctx, lang);
-    if (mem.size > 80) mem.clear();
-    mem.set(cacheKey, result);
+    const result = await ask(question, ctx, lang, image);
+    image = undefined; // free the base64
+    if (cacheKey) {
+      if (mem.size > 80) mem.clear();
+      mem.set(cacheKey, result);
+    }
     return Response.json(result);
   } catch (e) {
     // 429 from the model → tell the client the docent is busy, not broken.

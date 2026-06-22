@@ -16,13 +16,19 @@ const LANG_NAME: Record<Locale, string> = {
   ja: "Japanese",
 };
 
-export type AskContext = { artist?: string; museum?: string; work?: string };
+export type AskContext = {
+  artist?: string;
+  museum?: string;
+  work?: string;
+  region?: string; // which part of the work is in view (deep-zoom)
+};
 export type AskResult = { answer: string; sources: { title: string; uri: string }[] };
 
 export async function ask(
   question: string,
   ctx: AskContext,
   locale: Locale,
+  image?: string, // base64 JPEG of the exact area in view (deep-zoom), no prefix
 ): Promise<AskResult> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("not configured");
@@ -31,6 +37,7 @@ export async function ask(
     ctx.museum ? `at the ${ctx.museum}` : null,
     ctx.artist ? `in ${ctx.artist}'s gallery` : null,
     ctx.work ? `standing before "${ctx.work}"` : null,
+    ctx.region ? `looking closely at the ${ctx.region}` : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -41,6 +48,12 @@ export async function ask(
     `For a question about ART — a movement, an artist, a painting, a technique — ` +
     `answer clearly and to the point in at most three short sentences, then add ` +
     `one vivid, lesser-known anecdote in a final sentence. ` +
+    (image
+      ? `An image is attached: it is the exact area of the painting the visitor is ` +
+        `viewing right now in deep-zoom. When they say "this", "here", "who is this", ` +
+        `or ask about a detail, they mean what is visible in that crop — answer about ` +
+        `it specifically (identify the figure, object, or passage). `
+      : "") +
     `If instead the visitor asks how to USE this experience itself (moving around, ` +
     `the guided tour, asking you questions, the deep-zoom, changing language, ` +
     `muting sound, full screen, and so on), answer warmly and practically with the ` +
@@ -50,9 +63,17 @@ export async function ask(
     `be read aloud. Reply in ${LANG_NAME[locale]}.\n\n` +
     `GUIDE TO THE EXPERIENCE:\n${INTERFACE_GUIDE}`;
 
+  const parts: (
+    | { text: string }
+    | { inline_data: { mime_type: string; data: string } }
+  )[] = [{ text: question }];
+  if (image) {
+    parts.push({ inline_data: { mime_type: "image/jpeg", data: image } });
+  }
+
   const body = {
     systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: question }] }],
+    contents: [{ role: "user", parts }],
     tools: [{ google_search: {} }],
     generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
   };

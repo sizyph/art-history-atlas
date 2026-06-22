@@ -21,11 +21,15 @@ export default function AskDocent({
   artist,
   museum,
   getWork,
+  getView,
   placement = "edge",
 }: {
   artist: string;
   museum: string;
   getWork: () => string | null;
+  // In deep-zoom, returns the exact area in view (a cropped JPEG data URL + a
+  // plain-words location) so a question can be about what's inside that crop.
+  getView?: () => Promise<{ image?: string; region?: string }>;
   // "edge": floats at the right of the gallery; "bar": an inline trigger that
   // sits in the deep-zoom's control bar, with the panel popping up above it.
   placement?: "edge" | "bar";
@@ -128,6 +132,14 @@ export default function AskDocent({
   const runAnswer = async (question: string, viaVoice: boolean) => {
     setPhase("thinking");
     try {
+      // in deep-zoom, attach the exact area in view so "who is this?" works
+      let view: { image?: string; region?: string } = {};
+      if (getView) {
+        try {
+          view = await getView();
+        } catch {}
+      }
+      if (!openRef.current) return;
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -137,6 +149,8 @@ export default function AskDocent({
           artist,
           museum,
           work: getWork() ?? undefined,
+          region: view.region,
+          image: view.image ? view.image.split(",")[1] : undefined,
         }),
       });
       if (res.status === 429) {

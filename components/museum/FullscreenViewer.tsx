@@ -57,6 +57,33 @@ async function originalSize(
   }
 }
 
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// A plain-words description of where in the painting the visitor is looking, so
+// the docent has the location even alongside the cropped image.
+function describeRegion(
+  cxPx: number,
+  cyPx: number,
+  coverage: number,
+  iw: number,
+  ih: number,
+): string {
+  const cx = cxPx / iw;
+  const cy = cyPx / ih;
+  const col = cx < 0.34 ? "left" : cx < 0.67 ? "central" : "right";
+  const row = cy < 0.34 ? "upper" : cy < 0.67 ? "middle" : "lower";
+  const pos = row === "middle" && col === "central" ? "centre" : `${row}-${col}`;
+  return `${pos} part of the painting (about ${Math.round(coverage * 100)}% of it in view)`;
+}
+
 export default function FullscreenViewer({
   painting,
   onClose,
@@ -98,6 +125,52 @@ export default function FullscreenViewer({
   const hostRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const viewerRef = useRef<any>(null);
+
+  // Capture the exact area the visitor is zoomed into — a cropped JPEG plus a
+  // plain-words location — so the docent can answer "who is this?" about a detail.
+  // Cropped from the (same-origin, CORS-clean) source image, never the WebGL
+  // canvas, so toDataURL is reliable. Skipped when the whole work is in view.
+  const captureView = async (): Promise<{ image?: string; region?: string }> => {
+    const viewer = viewerRef.current;
+    if (!viewer) return {};
+    try {
+      const item = viewer.world?.getItemAt?.(0);
+      if (!item) return {};
+      const size = item.getContentSize();
+      const iw = size.x;
+      const ih = size.y;
+      const rect = viewer.viewport.viewportToImageRectangle(
+        viewer.viewport.getBounds(true),
+      );
+      const x = Math.max(0, rect.x);
+      const y = Math.max(0, rect.y);
+      const w = Math.min(iw - x, rect.width);
+      const h = Math.min(ih - y, rect.height);
+      if (w < 8 || h < 8) return {};
+      const coverage = (w * h) / (iw * ih);
+      if (coverage > 0.7) return {}; // whole work in view — the title is enough
+      const region = describeRegion(x + w / 2, y + h / 2, coverage, iw, ih);
+      const fracW = w / iw;
+      const fullW = Math.max(
+        900,
+        Math.min(3000, Math.round(700 / Math.max(0.05, fracW))),
+      );
+      const img = await loadImage(proxiedAtWidth(painting.imageUrl, fullW));
+      const s = img.naturalWidth / iw;
+      const cw = Math.max(1, Math.round(w * s));
+      const ch = Math.max(1, Math.round(h * s));
+      const out = Math.min(1, 768 / Math.max(cw, ch));
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(cw * out));
+      cv.height = Math.max(1, Math.round(ch * out));
+      const cctx = cv.getContext("2d");
+      if (!cctx) return { region };
+      cctx.drawImage(img, x * s, y * s, cw, ch, 0, 0, cv.width, cv.height);
+      return { image: cv.toDataURL("image/jpeg", 0.72), region };
+    } catch {
+      return {};
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -312,6 +385,7 @@ export default function FullscreenViewer({
               artist={artistName}
               museum={museumName}
               getWork={() => workTitle}
+              getView={captureView}
               placement="bar"
             />
           </>
