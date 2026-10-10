@@ -1,62 +1,40 @@
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import type { Locale } from "@/lib/i18n";
 
 // One warm, multilingual neural voice for every language, so the guide keeps the
 // same intimate character across EN / FR / JA. Slightly slow and a touch lower
-// for an unhurried, hypnotic read. (Azure's "Ava Multilingual" — the natural
-// voice auditioned for this project.)
+// for an unhurried, hypnotic read. This is Microsoft's "Ava Multilingual" neural
+// voice — the one auditioned for this project — synthesized on the fly through
+// Edge's free read-aloud endpoint (no key, no quota). Ava auto-matches the spoken
+// language to the text, so a single voice serves all three languages.
 const VOICE = "en-US-AvaMultilingualNeural";
 const RATE = "-10%";
 const PITCH = "-2%";
 
-const BCP47: Record<Locale, string> = { en: "en-US", fr: "fr-FR", ja: "ja-JP" };
-
-/** Whether the Azure Speech credentials are present (else: browser-voice fallback). */
+/**
+ * The voice needs no credentials, so it is always available. If a synthesis call
+ * fails (a Microsoft hiccup, or the box is offline), synthesize() throws and the
+ * client falls back to the browser's own speech voice — the guide degrades
+ * gracefully, it never goes silent.
+ */
 export function ttsConfigured(): boolean {
-  return !!(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION);
+  return true;
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) =>
-    c === "<"
-      ? "&lt;"
-      : c === ">"
-        ? "&gt;"
-        : c === "&"
-          ? "&amp;"
-          : c === "'"
-            ? "&apos;"
-            : "&quot;",
-  );
-}
+/** Synthesize narration as MP3 via Microsoft Edge's read-aloud voice endpoint. */
+export async function synthesize(text: string, _locale: Locale): Promise<Buffer> {
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  const { audioStream } = tts.toStream(text, { rate: RATE, pitch: PITCH });
 
-function ssml(text: string, locale: Locale): string {
-  return (
-    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${BCP47[locale]}">` +
-    `<voice name="${VOICE}"><prosody rate="${RATE}" pitch="${PITCH}">${escapeXml(text)}</prosody></voice>` +
-    `</speak>`
-  );
-}
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    audioStream.on("data", (d: Buffer) => chunks.push(d));
+    audioStream.on("end", () => resolve());
+    audioStream.on("error", reject);
+  });
 
-/** Synthesize narration as MP3 via the official Azure Speech REST API. */
-export async function synthesize(text: string, locale: Locale): Promise<Buffer> {
-  const key = process.env.AZURE_SPEECH_KEY!;
-  const region = process.env.AZURE_SPEECH_REGION!;
-  const res = await fetch(
-    `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`,
-    {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
-        "User-Agent": "ars-gratia-artis",
-      },
-      body: ssml(text, locale),
-    },
-  );
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Azure TTS ${res.status} ${detail}`.trim());
-  }
-  return Buffer.from(await res.arrayBuffer());
+  const buf = Buffer.concat(chunks);
+  if (buf.length === 0) throw new Error("edge-tts: empty audio");
+  return buf;
 }
