@@ -1,10 +1,12 @@
 import { type Locale } from "@/lib/i18n";
 import { docentSystem, type AskContext, type AskResult } from "@/lib/ask";
 
-// Free, EU-available fallback brain. Llama 4 Scout is text + vision capable, so
-// the deep-zoom "who is this?" still works; there is no web search, so answers
-// come without source links. OpenAI-compatible API.
-const MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+// Free, EU-available fallback brain used when Gemini is rate-limited / daily-
+// exhausted. Groq no longer offers a vision model, so this is text-only: it
+// answers from the work plus the plain-words region ("lower-left part…") the
+// docent already receives, without the pixels. No web search → no source links.
+// OpenAI-compatible API.
+const MODEL = "openai/gpt-oss-120b";
 
 export function groqConfigured(): boolean {
   return !!process.env.GROQ_API_KEY;
@@ -14,23 +16,13 @@ export async function askGroq(
   question: string,
   ctx: AskContext,
   locale: Locale,
-  image?: string,
+  // the deep-zoom crop can't be shown to a text-only model; the region is in ctx
+  _image?: string,
 ): Promise<AskResult> {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error("not configured");
 
-  const system = docentSystem(ctx, locale, !!image);
-
-  // vision uses the multi-part content form; text-only is a plain string
-  const userContent = image
-    ? [
-        { type: "text", text: question },
-        {
-          type: "image_url",
-          image_url: { url: `data:image/jpeg;base64,${image}` },
-        },
-      ]
-    : question;
+  const system = docentSystem(ctx, locale, false);
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -42,7 +34,7 @@ export async function askGroq(
       model: MODEL,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: userContent },
+        { role: "user", content: question },
       ],
       temperature: 0.7,
       max_tokens: 500,
