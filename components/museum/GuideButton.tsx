@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
-import { type Locale } from "@/lib/i18n";
-import { getGuideVolume, useGuideVolume } from "@/lib/guideAudio";
-
-const BCP47: Record<Locale, string> = { en: "en-US", fr: "fr-FR", ja: "ja-JP" };
+import {
+  browserUtterance,
+  getGuideVolume,
+  useGuideVolume,
+} from "@/lib/guideAudio";
 
 // Press-to-listen narration (neural via /api/narrate, with the browser voice as
 // a fallback), ducking the soundscape while it plays. A volume slider appears
@@ -67,14 +68,7 @@ export default function GuideButton({
     const synth = window.speechSynthesis;
     if (!synth || !text) return;
     synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = BCP47[locale];
-    u.rate = 0.96;
-    u.volume = getGuideVolume();
-    const v = synth
-      .getVoices()
-      .find((x) => x.lang?.toLowerCase().startsWith(locale));
-    if (v) u.voice = v;
+    const u = browserUtterance(text, locale);
     const done = () => {
       speakingRef.current = false;
       setSpeaking(false);

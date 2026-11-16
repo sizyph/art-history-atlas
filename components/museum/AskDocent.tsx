@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useT } from "@/components/LocaleProvider";
 import { useAudio } from "@/components/AudioProvider";
-import { getGuideVolume } from "@/lib/guideAudio";
+import { browserUtterance, getGuideVolume } from "@/lib/guideAudio";
 import { ASK_GREETINGS, type Locale } from "@/lib/i18n";
 
 const BCP47: Record<Locale, string> = { en: "en-US", fr: "fr-FR", ja: "ja-JP" };
@@ -51,6 +51,7 @@ export default function AskDocent({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const utterRef = useRef<SpeechSynthesisUtterance | null>(null); // browser-voice fallback
   const silence = useRef<number | undefined>(undefined);
   const transcriptRef = useRef(""); // live, so Stop/auto-stop always have the text
   const submittedRef = useRef(false); // one answer per question (Stop + onend race)
@@ -76,6 +77,12 @@ export default function AskDocent({
       audioRef.current.src = "";
       audioRef.current = null;
     }
+    if (utterRef.current) {
+      utterRef.current.onend = null;
+      utterRef.current.onerror = null;
+      utterRef.current = null;
+      window.speechSynthesis?.cancel();
+    }
     setDucked(false);
     setSpeaking(false);
   };
@@ -96,13 +103,40 @@ export default function AskDocent({
     } catch {}
   };
 
-  // Speak text in the Ava voice; resolves when finished (or at once if TTS is
-  // unavailable). Ducks the soundscape while it plays.
+  // Speak text in the Ava voice; resolves when finished. If Ava is unavailable
+  // (Microsoft's endpoint down), it falls back to the browser's own voice, as
+  // the narration guide does, so a spoken answer is never silent. Ducks the
+  // soundscape while it plays.
   const speak = (text: string) =>
     new Promise<void>((resolve) => {
       const el = new Audio();
       audioRef.current = el;
       setDucked(true);
+      const done = () => {
+        if (audioRef.current === el) audioRef.current = null;
+        setDucked(false);
+        resolve();
+      };
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack) return;
+        fellBack = true;
+        if (audioRef.current !== el) return resolve(); // stopped meanwhile
+        audioRef.current = null;
+        const synth = window.speechSynthesis;
+        if (!synth) return done();
+        synth.cancel();
+        const u = browserUtterance(text, locale);
+        const finish = () => {
+          if (utterRef.current === u) utterRef.current = null;
+          setDucked(false);
+          resolve();
+        };
+        u.onend = finish;
+        u.onerror = finish;
+        utterRef.current = u;
+        synth.speak(u);
+      };
       fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,20 +147,11 @@ export default function AskDocent({
           if (audioRef.current !== el) return resolve();
           el.src = URL.createObjectURL(blob);
           el.volume = getGuideVolume();
-          const done = () => {
-            if (audioRef.current === el) audioRef.current = null;
-            setDucked(false);
-            resolve();
-          };
           el.onended = done;
-          el.onerror = done;
-          el.play().catch(done);
+          el.onerror = fallback;
+          el.play().catch(fallback);
         })
-        .catch(() => {
-          if (audioRef.current === el) audioRef.current = null;
-          setDucked(false);
-          resolve();
-        });
+        .catch(fallback);
     });
 
   const runAnswer = async (question: string, viaVoice: boolean) => {
