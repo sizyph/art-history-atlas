@@ -42,7 +42,8 @@ test("movement → artist star → card → enter the museum", async ({ page }) 
   await expect(
     page.getByRole("heading", { name: "Caravaggio" }),
   ).toBeVisible();
-  await expect(page.getByText(/12 works/)).toBeVisible();
+  // the count follows the collection (it grew from 12 to 18 with re-ingests)
+  await expect(page.getByText(/\d+ works/)).toBeVisible();
 
   await page.getByRole("button", { name: /enter the museum/i }).click();
   await page.waitForURL(/\/museum\/caravaggio/, { timeout: 20000 });
@@ -61,29 +62,63 @@ test("museum renders and a painting opens the inspect lightbox", async ({
   const box = await canvas.boundingBox();
   if (!box) throw new Error("no canvas box");
 
-  // Side-wall paintings sit at mid-height near the left/right edges. Probe a
-  // few spots until the raycast hits a frame and the lightbox opens.
-  const credit = page.getByText("Wikimedia Commons");
-  const probes: [number, number][] = [];
-  for (const fx of [0.92, 0.96, 0.88, 0.82, 0.76, 0.1, 0.06, 0.14]) {
-    for (const fy of [0.42, 0.47, 0.52]) probes.push([fx, fy]);
-  }
+  // The hall recedes from the entrance with paintings on both walls. Sweep the
+  // left two-thirds at picture height until the raycast hits a frame — clear of
+  // the docent's "?" trigger at the right edge, mid-height (clicking it opens a
+  // panel over the view). Probes are spaced past the gallery's 320ms
+  // double-click window, so two never pair into a full-screen double-click.
+  const inspect = page.getByTestId("inspect");
   let opened = false;
-  for (const [fx, fy] of probes) {
-    await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
-    if (await credit.isVisible().catch(() => false)) {
-      opened = true;
-      break;
+  sweep: for (const fy of [0.42, 0.36, 0.5]) {
+    for (let fx = 0.06; fx <= 0.66; fx += 0.05) {
+      await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+      await page.waitForTimeout(350);
+      if (await inspect.isVisible().catch(() => false)) {
+        opened = true;
+        break sweep;
+      }
     }
-    await page.waitForTimeout(250);
   }
   expect(opened, "inspect lightbox opened on a painting click").toBeTruthy();
   // The lightbox carries a title heading and a Commons source link.
-  await expect(page.getByTestId("inspect")).toBeVisible();
-  await expect(page.getByTestId("inspect").locator("h2")).toBeVisible();
-  await expect(
-    page.getByTestId("inspect").getByRole("link", { name: "Commons" }),
-  ).toBeVisible();
+  await expect(inspect.locator("h2")).toBeVisible();
+  await expect(inspect.getByRole("link", { name: "Commons" })).toBeVisible();
+});
+
+test("docent falls back to the browser voice when Ava is unavailable", async ({
+  page,
+}) => {
+  // Record what the page asks the browser to say (no real audio here), and
+  // provide a recognizer so the voice-conversation path is taken.
+  await page.addInitScript(() => {
+    const said: string[] = [];
+    Object.assign(window, { __said: said });
+    window.speechSynthesis.speak = (u: SpeechSynthesisUtterance) => {
+      said.push(u.text);
+      setTimeout(() => u.dispatchEvent(new Event("end")), 0);
+    };
+    class FakeRecognition {
+      start() {}
+      stop() {}
+      abort() {}
+    }
+    Object.assign(window, { webkitSpeechRecognition: FakeRecognition });
+  });
+  // the neural voice is down, as when Microsoft rotated its endpoint's auth
+  await page.route("**/api/speak", (r) =>
+    r.fulfill({ status: 502, body: "tts failed" }),
+  );
+
+  await page.goto("/museum/caravaggio");
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 20000 });
+  await page.getByRole("button", { name: "Ask the docent" }).first().click();
+
+  // the spoken greeting still happens — in the browser's own voice
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { __said: string[] }).__said),
+    )
+    .toHaveLength(1);
 });
 
 test("dragging looks around without opening a painting", async ({ page }) => {
