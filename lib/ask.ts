@@ -25,11 +25,12 @@ export type AskContext = {
 export type AskResult = { answer: string; sources: { title: string; uri: string }[] };
 
 // The docent's instructions — shared by every provider so the voice stays the
-// same whichever brain answers.
+// same whichever brain answers. Only a brain that can search the web is asked
+// for an anecdote: one that can't check its story would make one up.
 export function docentSystem(
   ctx: AskContext,
   locale: Locale,
-  hasImage: boolean,
+  { image = false, webSearch = true }: { image?: boolean; webSearch?: boolean } = {},
 ): string {
   const where = [
     ctx.museum ? `at the ${ctx.museum}` : null,
@@ -44,9 +45,12 @@ export function docentSystem(
     `You are a warm, erudite museum docent speaking aloud to a visitor` +
     `${where ? " " + where : ""}. ` +
     `For a question about ART — a movement, an artist, a painting, a technique — ` +
-    `answer clearly and to the point in at most three short sentences, then add ` +
-    `one vivid, lesser-known anecdote in a final sentence. ` +
-    (hasImage
+    `answer clearly and to the point in at most three short sentences` +
+    (webSearch
+      ? `, then add one vivid, lesser-known anecdote in a final sentence. `
+      : `, keeping to well-established facts. Do not add an anecdote; if the ` +
+        `visitor asks for a story, tell only a well-documented one. `) +
+    (image
       ? `An image is attached: it is the exact area of the painting the visitor is ` +
         `viewing right now in deep-zoom. When they say "this", "here", "who is this", ` +
         `or ask about a detail, they mean what is visible in that crop — answer about ` +
@@ -72,7 +76,7 @@ export async function ask(
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("not configured");
 
-  const system = docentSystem(ctx, locale, !!image);
+  const system = docentSystem(ctx, locale, { image: !!image });
 
   const parts: (
     | { text: string }
@@ -86,7 +90,15 @@ export async function ask(
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts }],
     tools: [{ google_search: {} }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+    // 2.5 Flash thinks before it answers, and those hidden tokens count toward
+    // maxOutputTokens: under the old cap of 500, a rich question spent ~370 on
+    // thinking and the answer stopped mid-sentence. Bound the thinking and give
+    // the reply ample room; the prompt, not the cap, keeps it short.
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 512 },
+    },
   };
 
   const url =
@@ -104,11 +116,20 @@ export async function ask(
 
   const data = await res.json();
   const cand = data?.candidates?.[0];
-  const answer: string = (cand?.content?.parts ?? [])
+  const finish: string | undefined = cand?.finishReason;
+  // A recitation or safety stop (or a blocked prompt) → let the fallback answer.
+  if (finish && finish !== "STOP" && finish !== "MAX_TOKENS") {
+    throw new Error(`gemini stopped: ${finish}`);
+  }
+  const text: string = (cand?.content?.parts ?? [])
+    .filter((p: { thought?: boolean }) => !p.thought)
     .map((p: { text?: string }) => p.text ?? "")
     .join("")
     .trim();
-  if (!answer) throw new Error("empty answer");
+  const answer = finish === "MAX_TOKENS" ? wholeSentences(text) : text;
+  if (!answer) {
+    throw new Error(`gemini empty: ${finish ?? data?.promptFeedback?.blockReason ?? "no candidate"}`);
+  }
 
   const chunks = cand?.groundingMetadata?.groundingChunks ?? [];
   const seen = new Set<string>();
@@ -122,4 +143,29 @@ export async function ask(
   }
 
   return { answer, sources };
+}
+
+// A model that hits its token cap stops mid-word ("Chiaroscuro … is an"). Keep
+// only the sentences it finished, or nothing if it finished none. A full stop
+// after an initial or a common abbreviation ("St.", "c.", "av. J.-C."), or one
+// followed by a lowercase word, doesn't end a sentence.
+const ABBREVIATIONS = new Set(
+  "st ste mr mrs ms dr jr sr mt mme mlle mgr ca cf vs av apr".split(" "),
+);
+export function wholeSentences(text: string): string {
+  let end = 0;
+  for (const m of text.matchAll(/[.!?。！？](?:[)\]"'”’」』）]|[\u00a0\u202f ]?»)*/g)) {
+    const after = m.index + m[0].length;
+    if (!"。！？".includes(m[0][0])) {
+      const next = text.slice(after);
+      if (next && !/^\s/.test(next)) continue; // inside a token: "2.5", "J.-C."
+      if (/^\s*\p{Ll}/u.test(next)) continue; // the sentence goes on
+      if (m[0][0] === ".") {
+        const word = /\p{L}+$/u.exec(text.slice(0, m.index))?.[0];
+        if (word && (word.length === 1 || ABBREVIATIONS.has(word.toLowerCase()))) continue;
+      }
+    }
+    end = after;
+  }
+  return text.slice(0, end).trim();
 }

@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       result = await ask(question, ctx, lang, image);
     } catch (e) {
       primaryErr = e;
+      console.warn("ask: gemini →", e instanceof Error ? e.message : e);
     }
   }
   if (!result && groqConfigured()) {
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
       result = await askGroq(question, ctx, lang, image);
     } catch (e) {
       if (!primaryErr) primaryErr = e;
+      console.warn("ask: groq →", e instanceof Error ? e.message : e);
     }
   }
   image = undefined; // free the base64
