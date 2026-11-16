@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { asc, count, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
@@ -7,38 +8,40 @@ import type { LayoutInput } from "@/lib/timeline";
 
 /** Periods + artists (with painting counts) for the constellation. */
 export async function getConstellationData(): Promise<LayoutInput> {
-  const ps = await db.select().from(periods).orderBy(asc(periods.orderIndex));
-  const as = await db
-    .select({
-      id: artists.id,
-      slug: artists.slug,
-      name: artists.name,
-      periodId: artists.periodId,
-      birthYear: artists.birthYear,
-      deathYear: artists.deathYear,
-      nationality: artists.nationality,
-      bio: artists.bio,
-      portraitUrl: artists.portraitUrl,
-      wikipediaUrl: artists.wikipediaUrl,
-      orderIndex: artists.orderIndex,
-      i18n: artists.i18n,
-      paintingCount: count(paintings.id),
-    })
-    .from(artists)
-    .leftJoin(paintings, eq(paintings.artistId, artists.id))
-    .groupBy(artists.id)
-    .orderBy(asc(artists.orderIndex));
-
   const infl = alias(artists, "infl");
-  const links = await db
-    .select({
-      aSlug: artists.slug,
-      bSlug: infl.slug,
-      note: influences.note,
-    })
-    .from(influences)
-    .innerJoin(artists, eq(influences.artistId, artists.id))
-    .innerJoin(infl, eq(influences.influencerId, infl.id));
+  // independent queries — one round trip instead of three
+  const [ps, as, links] = await Promise.all([
+    db.select().from(periods).orderBy(asc(periods.orderIndex)),
+    db
+      .select({
+        id: artists.id,
+        slug: artists.slug,
+        name: artists.name,
+        periodId: artists.periodId,
+        birthYear: artists.birthYear,
+        deathYear: artists.deathYear,
+        nationality: artists.nationality,
+        bio: artists.bio,
+        portraitUrl: artists.portraitUrl,
+        wikipediaUrl: artists.wikipediaUrl,
+        orderIndex: artists.orderIndex,
+        i18n: artists.i18n,
+        paintingCount: count(paintings.id),
+      })
+      .from(artists)
+      .leftJoin(paintings, eq(paintings.artistId, artists.id))
+      .groupBy(artists.id)
+      .orderBy(asc(artists.orderIndex)),
+    db
+      .select({
+        aSlug: artists.slug,
+        bSlug: infl.slug,
+        note: influences.note,
+      })
+      .from(influences)
+      .innerJoin(artists, eq(influences.artistId, artists.id))
+      .innerJoin(infl, eq(influences.influencerId, infl.id)),
+  ]);
 
   return { periods: ps, artists: as, influences: links };
 }
@@ -110,8 +113,12 @@ export async function getNeighbors(artistId: number): Promise<Neighbor[]> {
   return out;
 }
 
-/** One artist with their period, ordered paintings, and influence neighbors. */
-export async function getArtistBySlug(slug: string) {
+/**
+ * One artist with their period, ordered paintings, and influence neighbors.
+ * Wrapped in React's cache() so the museum page and its generateMetadata share
+ * a single fetch per request.
+ */
+export const getArtistBySlug = cache(async (slug: string) => {
   const [artist] = await db
     .select()
     .from(artists)
@@ -119,13 +126,12 @@ export async function getArtistBySlug(slug: string) {
     .limit(1);
   if (!artist) return null;
 
-  const [period] = await db
-    .select()
-    .from(periods)
-    .where(eq(periods.id, artist.periodId))
-    .limit(1);
-
-  const [works, neighbors] = await Promise.all([
+  const [[period], works, neighbors] = await Promise.all([
+    db
+      .select()
+      .from(periods)
+      .where(eq(periods.id, artist.periodId))
+      .limit(1),
     db
       .select()
       .from(paintings)
@@ -135,7 +141,7 @@ export async function getArtistBySlug(slug: string) {
   ]);
 
   return { artist, period, paintings: works, neighbors };
-}
+});
 
 export async function getAllArtistSlugs(): Promise<string[]> {
   const rows = await db.select({ slug: artists.slug }).from(artists);
