@@ -27,7 +27,7 @@ import FullscreenViewer from "@/components/museum/FullscreenViewer";
 import MoveStick from "@/components/museum/MoveStick";
 import Visitors from "@/components/museum/Visitors";
 import Atmosphere from "@/components/museum/Atmosphere";
-import AskDocent from "@/components/museum/AskDocent";
+import AskDocent, { type DocentWork } from "@/components/museum/AskDocent";
 import { daylight, skyColor, resetDaylight } from "@/lib/daylight";
 import { PeripheralBlur } from "@/components/museum/effects";
 import LangSwitcher from "@/components/LangSwitcher";
@@ -2051,6 +2051,7 @@ type FocusMeta = {
   cz: number;
   nx: number; // inward wall normal (toward room centre)
   subject: ArtSubject;
+  id: number;
   title: string;
 };
 
@@ -2071,7 +2072,7 @@ function Contemplate({
   locale: Locale;
   onScene: (s: Scene) => void;
   onArtwork: (s: ArtSubject | null) => void;
-  onFocus: (title: string | null) => void;
+  onFocus: (work: DocentWork | null) => void;
   onNear: (s: ArtSubject | null, pan: number, level: number) => void;
 }) {
   const { camera, gl, scene } = useThree();
@@ -2082,6 +2083,7 @@ function Contemplate({
         cz: h.position[2],
         nx: h.rotation[1] > 0 ? 1 : -1,
         subject: classifySubject(`${h.p.title} ${h.p.story ?? ""}`),
+        id: h.p.id,
         title: localized(locale, h.p.i18n, "title", h.p.title) ?? h.p.title,
       })),
     [hangs, locale],
@@ -2091,7 +2093,7 @@ function Contemplate({
   const baseExp = useRef<number | null>(null);
   const prevEnabled = useRef(false);
   const lastScene = useRef<Scene | null>(null);
-  const lastTitle = useRef<string | null>(null);
+  const lastFocus = useRef<DocentWork | null>(null);
 
   useFrame((state, dt) => {
     const enabled = enabledRef.current;
@@ -2100,7 +2102,7 @@ function Contemplate({
     prevEnabled.current = enabled;
     if (justEnabled) lastScene.current = null; // re-assert after an overlay
     if (justDisabled) {
-      lastTitle.current = null;
+      lastFocus.current = null;
       onFocus(null);
       onNear(null, 0, 0); // hand the spatial bus back to silence
     }
@@ -2144,14 +2146,19 @@ function Contemplate({
       if (want !== lastScene.current) {
         lastScene.current = want;
         onArtwork(want === "artview" && best ? best.subject : null);
-        const title = want === "artview" && best ? best.title : null;
-        lastTitle.current = title;
-        onFocus(title);
+        const work = want === "artview" && best ? { id: best.id, title: best.title } : null;
+        lastFocus.current = work;
+        onFocus(work);
         onScene(want);
-      } else if (want === "artview" && best && best.title !== lastTitle.current) {
-        lastTitle.current = best.title; // slid to an adjacent work
+      } else if (
+        want === "artview" &&
+        best &&
+        (best.id !== lastFocus.current?.id || best.title !== lastFocus.current?.title)
+      ) {
+        // slid to an adjacent work (or the language changed under the same one)
+        lastFocus.current = { id: best.id, title: best.title };
         onArtwork(best.subject);
-        onFocus(best.title);
+        onFocus(lastFocus.current);
       }
       // faint, panned hint of whatever work you're closest to
       const level = nearest
@@ -2300,8 +2307,9 @@ export default function Gallery({
   const [tourIdx, setTourIdx] = useState(0);
   const [tourPaused, setTourPaused] = useState(false);
   const tourPausedRef = useRef(false);
-  const [focusTitle, setFocusTitle] = useState<string | null>(null);
-  const currentWorkRef = useRef<string | null>(null); // work you're before, for Ask context
+  const [focus, setFocus] = useState<DocentWork | null>(null); // the work you're before
+  const focusTitle = focus?.title ?? null;
+  const currentWorkRef = useRef<DocentWork | null>(null); // …as context for Ask
   const tourActive = useRef(false);
   const tourTarget = useRef<TourStop | null>(null);
   const tourAudio = useRef<HTMLAudioElement | null>(null);
@@ -2347,8 +2355,8 @@ export default function Gallery({
   }, [phase, inspect, fullscreen, tour]);
 
   useEffect(() => {
-    currentWorkRef.current = tour ? null : focusTitle;
-  }, [focusTitle, tour]);
+    currentWorkRef.current = tour ? null : focus;
+  }, [focus, tour]);
 
   // a shared deep link (?work=<id>) opens straight to that painting
   useEffect(() => {
@@ -2444,7 +2452,7 @@ export default function Gallery({
     setArtwork(null);
     setAudioScene("gallery");
     setTour(false);
-    setFocusTitle(null);
+    setFocus(null);
     setFullscreen(null);
     tourPausedRef.current = false;
     setTourPaused(false);
@@ -2561,7 +2569,7 @@ export default function Gallery({
     }
     const gen = ++tourGen.current;
     setTourIdx(stopIdx);
-    setFocusTitle(s.title);
+    setFocus({ id: s.painting.id, title: s.title });
     tourTarget.current = s;
     tourTimer.current = window.setTimeout(() => playNarration(stopIdx, gen), 2600);
   }
@@ -2732,7 +2740,7 @@ export default function Gallery({
           locale={locale}
           onScene={setAudioScene}
           onArtwork={setArtwork}
-          onFocus={setFocusTitle}
+          onFocus={setFocus}
           onNear={setNearWork}
         />
         <TourCamera activeRef={tourActive} targetRef={tourTarget} />

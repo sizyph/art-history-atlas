@@ -13,6 +13,7 @@ const threeThenCut =
 
 // what the docent last sent to the (stubbed) provider
 type Sent = {
+  systemInstruction: { parts: { text: string }[] };
   generationConfig: { maxOutputTokens: number; thinkingConfig: { thinkingBudget: number } };
   max_completion_tokens: number;
   messages: { content: string }[];
@@ -74,4 +75,25 @@ test("Groq: a token-cap stop is trimmed, and it adds no anecdote", async () => {
   expect(sent.max_completion_tokens).toBeGreaterThanOrEqual(2048);
   expect(sent.messages[0].content).toMatch(/Do not add an anecdote/);
   expect(docentSystem({}, "en")).toMatch(/lesser-known anecdote/); // Gemini still tells one
+});
+
+test("both brains get the notes on the work in view", async () => {
+  const notes = "Title: The Calling of Saint Matthew\nIt depicts Jesus calling Matthew.";
+  const ctx = { work: "The Calling of Saint Matthew", notes };
+
+  reply(gemini("STOP", "Fine."));
+  await ask("q", ctx, "en");
+  expect(sent.systemInstruction.parts[0].text).toContain(`NOTES ON THE WORK:\n${notes}`);
+
+  reply({ choices: [{ finish_reason: "stop", message: { content: "Fine." } }] });
+  await askGroq("q", ctx, "en");
+  const groqSystem = sent.messages[0].content;
+  expect(groqSystem).toContain(notes);
+  expect(groqSystem).toMatch(/never contradict them/);
+  // it can't see the painting: where things are in it only from the notes
+  expect(groqSystem).toMatch(/never say where things are in it[\s\S]*unless the NOTES/);
+
+  const bare = docentSystem({}, "en", { webSearch: false });
+  expect(bare).not.toContain("NOTES");
+  expect(bare).toMatch(/never say where things are in it/);
 });

@@ -50,9 +50,8 @@ test("movement → artist star → card → enter the museum", async ({ page }) 
   await expect(page.locator("canvas")).toBeVisible();
 });
 
-test("museum renders and a painting opens the inspect lightbox", async ({
-  page,
-}) => {
+// Click into the gallery until a painting's inspect lightbox opens; returns it.
+async function openAPainting(page: Page) {
   await page.goto("/museum/caravaggio");
   await expect(page.locator("canvas")).toBeVisible({ timeout: 20000 });
   await expect(page.getByText("Baroque")).toBeVisible();
@@ -80,9 +79,43 @@ test("museum renders and a painting opens the inspect lightbox", async ({
     }
   }
   expect(opened, "inspect lightbox opened on a painting click").toBeTruthy();
+  return inspect;
+}
+
+test("museum renders and a painting opens the inspect lightbox", async ({
+  page,
+}) => {
+  const inspect = await openAPainting(page);
   // The lightbox carries a title heading and a Commons source link.
   await expect(inspect.locator("h2")).toBeVisible();
   await expect(inspect.getByRole("link", { name: "Commons" })).toBeVisible();
+});
+
+test("the docent is told which painting is in view", async ({ page }) => {
+  // text-only docent (no microphone path), and a canned answer — no model call
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    delete w.webkitSpeechRecognition;
+    delete w.SpeechRecognition;
+  });
+  const asked: { body?: { work?: string; workId?: unknown } } = {};
+  await page.route("**/api/ask", async (r) => {
+    asked.body = r.request().postDataJSON();
+    await r.fulfill({ json: { answer: "A canned answer.", sources: [] } });
+  });
+
+  const inspect = await openAPainting(page);
+  const title = (await inspect.locator("h2").textContent())?.trim();
+  await inspect.getByRole("button", { name: "Full screen" }).click(); // deep-zoom
+  await page.getByRole("button", { name: "Ask the docent" }).first().click();
+  const box = page.getByPlaceholder(/ask about art/i);
+  await box.fill("Who painted this?");
+  await box.press("Enter");
+
+  await expect(page.getByText("A canned answer.")).toBeVisible();
+  // the title for the prompt, and the id the server reads its notes by
+  expect(asked.body?.work).toBe(title);
+  expect(typeof asked.body?.workId).toBe("number");
 });
 
 test("docent falls back to the browser voice when Ava is unavailable", async ({

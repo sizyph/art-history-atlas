@@ -172,3 +172,34 @@ export async function getPaintingById(id: number) {
     .limit(1);
   return p ?? null;
 }
+
+/**
+ * What the docent is told about the work before the visitor: its Wikipedia
+ * summary plus the catalogue facts. The stored year is added only when the
+ * summary names none — a few stored years are wrong (1609 for a work its own
+ * summary dates 1599–1600), and the prose is the better source.
+ */
+export async function getWorkNotes(id: number): Promise<string | null> {
+  const [p] = await db
+    .select({
+      title: paintings.title,
+      year: paintings.year,
+      location: paintings.location,
+      story: paintings.story,
+      facts: paintings.facts,
+    })
+    .from(paintings)
+    .where(eq(paintings.id, id))
+    .limit(1);
+  if (!p) return null;
+  const story = (p.story ?? "").trim().slice(0, 2000);
+  return [
+    `Title: ${p.title}`,
+    p.year && !/\b\d{4}\b/.test(story) ? `Date: ${p.year}` : null,
+    p.location ? `Location: ${p.location}` : null,
+    p.facts?.length ? `Facts: ${p.facts.join("; ")}` : null,
+    story || null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}

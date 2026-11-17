@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { ask, askConfigured, type AskContext, type AskResult } from "@/lib/ask";
 import { askGroq, groqConfigured } from "@/lib/askGroq";
+import { getWorkNotes } from "@/lib/data";
 import { LOCALES, type Locale } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -40,11 +41,34 @@ export async function POST(req: NextRequest) {
       ? body.image
       : undefined;
 
-  // Cache only text answers — an attached view is specific to that moment.
-  const cacheKey = image ? null : `${lang}:${ctx.work ?? ""}:${question.toLowerCase()}`;
+  // the painting before the visitor, by id: what we know of it is looked up here
+  const workId = Number(body.workId);
+  const hasWork = Number.isSafeInteger(workId) && workId > 0;
+
+  // Cache only text answers — an attached view is specific to that moment — and
+  // key on everything the answer depends on: "tell me about this artist" means
+  // something else in each gallery, and many works share a title.
+  const cacheKey = image
+    ? null
+    : JSON.stringify([
+        lang,
+        ctx.museum,
+        ctx.artist,
+        hasWork ? workId : ctx.work,
+        ctx.region,
+        question.toLowerCase(),
+      ]);
   if (cacheKey) {
     const hit = mem.get(cacheKey);
     if (hit) return Response.json(hit);
+  }
+
+  if (hasWork) {
+    try {
+      ctx.notes = (await getWorkNotes(workId)) ?? undefined;
+    } catch (e) {
+      console.warn("ask: notes →", e instanceof Error ? e.message : e); // answer anyway
+    }
   }
 
   // Gemini first (keeps web-search sources); on any failure — most often its

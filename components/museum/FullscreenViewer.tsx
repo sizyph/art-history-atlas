@@ -384,7 +384,7 @@ export default function FullscreenViewer({
             <AskDocent
               artist={artistName}
               museum={museumName}
-              getWork={() => workTitle}
+              getWork={() => ({ id: painting.id, title: workTitle })}
               getView={captureView}
               placement="bar"
             />

@@ -12,6 +12,10 @@ const SILENCE_MS = 4000;
 type Phase = "intro" | "listening" | "thinking" | "answering" | "error";
 type Source = { title: string; uri: string };
 
+// The work the visitor is before: its title for the prompt, its id so the
+// server can add what it knows of the painting.
+export type DocentWork = { id: number; title: string };
+
 // A docent you can speak to or type to. Tap "?", it greets you aloud (a varied,
 // immersive line), then listens — auto-stopping after 4s of silence, or when you
 // press Stop, either of which sends the question. You can also just type. Spoken
@@ -26,7 +30,7 @@ export default function AskDocent({
 }: {
   artist: string;
   museum: string;
-  getWork: () => string | null;
+  getWork: () => DocentWork | null;
   // In deep-zoom, returns the exact area in view (a cropped JPEG data URL + a
   // plain-words location) so a question can be about what's inside that crop.
   getView?: () => Promise<{ image?: string; region?: string }>;
@@ -165,6 +169,7 @@ export default function AskDocent({
         } catch {}
       }
       if (!openRef.current) return;
+      const work = getWork();
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -173,7 +178,8 @@ export default function AskDocent({
           lang: locale,
           artist,
           museum,
-          work: getWork() ?? undefined,
+          work: work?.title,
+          workId: work?.id, // the server reads its notes on the work by id
           region: view.region,
           image: view.image ? view.image.split(",")[1] : undefined,
         }),

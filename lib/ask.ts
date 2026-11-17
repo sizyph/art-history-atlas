@@ -21,6 +21,7 @@ export type AskContext = {
   museum?: string;
   work?: string;
   region?: string; // which part of the work is in view (deep-zoom)
+  notes?: string; // what we hold on that work: its Wikipedia summary + facts
 };
 export type AskResult = { answer: string; sources: { title: string; uri: string }[] };
 
@@ -49,7 +50,17 @@ export function docentSystem(
     (webSearch
       ? `, then add one vivid, lesser-known anecdote in a final sentence. `
       : `, keeping to well-established facts. Do not add an anecdote; if the ` +
-        `visitor asks for a story, tell only a well-documented one. `) +
+        `visitor asks for a story, tell only a well-documented one. You cannot ` +
+        `see the painting: never say where things are in it — left or right, ` +
+        `who stands where, where the light comes from` +
+        (ctx.notes ? ` — unless the NOTES below say so` : "") +
+        `. If asked, say what the scene shows and means, and invite the visitor ` +
+        `to look for themselves. `) +
+    (ctx.notes
+      ? `The NOTES below are reliable facts about the work before the visitor, ` +
+        `from its Wikipedia article: build on them, never contradict them, and ` +
+        `never mention them. `
+      : "") +
     (image
       ? `An image is attached: it is the exact area of the painting the visitor is ` +
         `viewing right now in deep-zoom. When they say "this", "here", "who is this", ` +
@@ -63,6 +74,7 @@ export function docentSystem(
     `anecdote. ` +
     `No lists, no headings, no markdown, no citations in the prose; this text will ` +
     `be read aloud. Reply in ${LANG_NAME[locale]}.\n\n` +
+    (ctx.notes ? `NOTES ON THE WORK:\n${ctx.notes}\n\n` : "") +
     `GUIDE TO THE EXPERIENCE:\n${INTERFACE_GUIDE}`
   );
 }
