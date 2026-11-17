@@ -14,6 +14,14 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { PERIODS } from "../lib/curated";
+import {
+  inceptionQuery,
+  parseInceptions,
+  pickYear,
+  wikidataDate,
+  type Inception,
+} from "./paintingYear";
+import { YEAR_OVERRIDES } from "./yearOverrides";
 
 const DRY = process.argv.includes("--dry");
 const ONLY = (
@@ -137,7 +145,7 @@ function filePageUrl(imageBase: string): string {
 type RawPainting = {
   qid: string;
   title: string;
-  year: number | null;
+  inceptions: Inception[]; // every Wikidata date, with precision — see paintingYear.ts
   sitelinks: number;
   imageBase: string;
   articleTitle: string;
@@ -151,11 +159,12 @@ type RawPainting = {
 };
 
 async function paintingsFor(qid: string): Promise<RawPainting[]> {
-  const q = `SELECT ?p ?pLabel ?year ?image ?article ?sitelinks ?mediumLabel ?genreLabel ?locationLabel ?collectionLabel ?height ?width WHERE {
+  // No date here: YEAR() of a century-precision inception gave 1900 for "19th
+  // century". The chosen works' dates are fetched with their precision below.
+  const q = `SELECT ?p ?pLabel ?image ?article ?sitelinks ?mediumLabel ?genreLabel ?locationLabel ?collectionLabel ?height ?width WHERE {
     ?p wdt:P170 wd:${qid} ; wdt:P31/wdt:P279* wd:Q3305213 ; wdt:P18 ?image .
     ?p wikibase:sitelinks ?sitelinks .
     ?article schema:about ?p ; schema:isPartOf <https://en.wikipedia.org/> .
-    OPTIONAL { ?p wdt:P571 ?date. BIND(YEAR(?date) AS ?year) }
     OPTIONAL { ?p wdt:P186 ?medium. }
     OPTIONAL { ?p wdt:P136 ?genre. }
     OPTIONAL { ?p wdt:P276 ?location. }
@@ -177,7 +186,7 @@ async function paintingsFor(qid: string): Promise<RawPainting[]> {
     byId.set(pid, {
       qid: pid,
       title: r.pLabel?.value ?? articleTitle,
-      year: r.year?.value ? parseInt(r.year.value, 10) : null,
+      inceptions: [],
       sitelinks: r.sitelinks?.value ? parseInt(r.sitelinks.value, 10) : 0,
       imageBase: r.image.value.replace(/^http:/, "https:"),
       articleTitle,
@@ -219,10 +228,17 @@ async function paintingsFor(qid: string): Promise<RawPainting[]> {
     return !s || Math.max(s.w, s.h) >= RES_FLOOR; // keep if high-res or unknown
   });
 
-  return (good.length >= MAX_PAINTINGS ? good : candidates).slice(
+  const chosen = (good.length >= MAX_PAINTINGS ? good : candidates).slice(
     0,
     MAX_PAINTINGS,
   );
+
+  // every inception statement of the chosen works, with precision and rank
+  if (chosen.length) {
+    const dates = parseInceptions(await sparql(inceptionQuery(chosen.map((c) => c.qid))));
+    for (const c of chosen) c.inceptions = dates.get(c.qid) ?? [];
+  }
+  return chosen;
 }
 
 const normName = (s: string) =>
@@ -361,7 +377,9 @@ async function main() {
       console.log(`  ${mark} ${ent.title.padEnd(28)} ${paints.length} paintings`);
       if (ONLY)
         for (const p of paints)
-          console.log(`       · ${p.title} (${p.sitelinks} wikis, ${p.year ?? "—"})`);
+          console.log(
+            `       · ${p.title} (${p.sitelinks} wikis, Wikidata date ${wikidataDate(p.inceptions)?.year ?? "—"})`,
+          );
 
       if (DRY) continue;
 
@@ -415,7 +433,15 @@ async function main() {
           paints.map((p, i) => ({
             artistId,
             title: p.title,
-            year: p.year,
+            // the date its own Wikipedia summary states, checked against Wikidata
+            year:
+              YEAR_OVERRIDES[p.qid] ??
+              pickYear({
+                story: stories[i],
+                inceptions: p.inceptions,
+                born: meta.birthYear,
+                died: meta.deathYear,
+              }),
             imageUrl: `${p.imageBase}?width=1800`,
             thumbUrl: `${p.imageBase}?width=600`,
             width: p.width ?? null,
